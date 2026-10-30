@@ -105,6 +105,54 @@ public final class ShapeActions {
                 .withStyle(ChatFormatting.AQUA), true);
     }
 
+    /**
+     * Builds blocks of different kinds at given places (an imported pattern), the same way a shape is built: only air and
+     * replaceable blocks are replaced unless {@code overwrite}, blocks with block entities are kept, and it can be undone.
+     */
+    public static void placeStates(ServerPlayer player, Map<BlockPos, BlockState> cells, boolean overwrite) {
+        if (!mayUse(player)) {
+            player.displayClientMessage(Component.literal("The blueprint wand needs creative mode or operator permission.")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        if (cells.size() > MAX_PLACED) {
+            player.displayClientMessage(Component.literal("That is too big to build (over " + MAX_PLACED + " blocks).")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        ServerLevel level = player.serverLevel();
+        Map<Long, BlockState> before = new LinkedHashMap<>();
+        int placed = 0;
+        int skipped = 0;
+        for (Map.Entry<BlockPos, BlockState> entry : cells.entrySet()) {
+            BlockPos pos = entry.getKey();
+            BlockState state = entry.getValue();
+            if (!level.isInWorldBounds(pos) || !level.hasChunkAt(pos)) {
+                skipped++;
+                continue;
+            }
+            BlockState existing = level.getBlockState(pos);
+            boolean free = existing.isAir() || existing.canBeReplaced();
+            if ((!free && !overwrite) || level.getBlockEntity(pos) != null || existing == state) {
+                skipped++;
+                continue;
+            }
+            before.put(pos.asLong(), existing);
+            level.setBlock(pos, state, 2);
+            placed++;
+        }
+        if (!before.isEmpty()) {
+            Deque<Undo> history = HISTORY.computeIfAbsent(player.getUUID(), id -> new ArrayDeque<>());
+            history.addLast(new Undo(level.dimension(), before));
+            while (history.size() > UNDO_DEPTH) history.removeFirst();
+        }
+        player.displayClientMessage(Component.literal("Placed " + placed + " blocks" +
+                (skipped > 0 ? " (" + skipped + " skipped)" : "") + ". Left-click to undo.")
+                .withStyle(ChatFormatting.AQUA), true);
+    }
+
+    private static final int MAX_PLACED = 60_000;
+
     public static void undo(ServerPlayer player) {
         if (!mayUse(player)) return;
         Deque<Undo> history = HISTORY.get(player.getUUID());

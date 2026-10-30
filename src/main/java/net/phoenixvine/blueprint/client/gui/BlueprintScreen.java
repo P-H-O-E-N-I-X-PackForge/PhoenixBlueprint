@@ -14,6 +14,7 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
+import net.phoenixvine.blueprint.client.ImportHologram;
 import net.phoenixvine.blueprint.client.ShapeExportClient;
 import net.phoenixvine.blueprint.client.ShapeHologram;
 import net.phoenixvine.blueprint.client.WandEditor;
@@ -95,6 +96,10 @@ public final class BlueprintScreen extends Screen {
     private static final int X_RENAME = 314;
     private static final int X_AUTO_SELECT = 315;
     private static final int X_OPEN_FOLDER = 316;
+    private static final int X_IMPORT = 317;
+    private static final int X_IMPORT_TURN = 318;
+    private static final int X_IMPORT_PLACE = 319;
+    private static final int X_IMPORT_CLEAR = 331;
     private static final int M_BACK = 320;
     private static final int M_NAME = 321;
     private static final int M_ROTATION = 322;
@@ -395,7 +400,18 @@ public final class BlueprintScreen extends Screen {
         }
         ry += chip(g, font, X_MACHINE_PAGE, "MACHINE DEFINITION >", rx, ry, rw, o.style() == KubeJsExport.STYLE_MACHINE,
                 mx, my, true) + 3;
-        chip(g, font, X_OPEN_FOLDER, "OPEN EXPORTS FOLDER", rx, ry, rw, false, mx, my, true);
+        ry += chip(g, font, X_OPEN_FOLDER, "OPEN EXPORTS FOLDER", rx, ry, rw, false, mx, my, true) + 8;
+
+        // a pattern from the clipboard, shown as a hologram where the wand is aimed
+        g.drawString(font, "IMPORT", rx, ry, HudModel.DIM, false);
+        ry += 11;
+        ry += chip(g, font, X_IMPORT, "IMPORT FROM CLIPBOARD", rx, ry, rw, ImportHologram.active(), mx, my, true) + 3;
+        if (ImportHologram.active()) {
+            ry += chip(g, font, X_IMPORT_TURN, "TURN IT (" + ImportHologram.turns() * 90 + ")", rx, ry, rw, false, mx, my,
+                    true) + 3;
+            ry += chip(g, font, X_IMPORT_PLACE, "BUILD IT", rx, ry, rw, false, mx, my, true) + 3;
+            chip(g, font, X_IMPORT_CLEAR, "CLEAR IMPORT", rx, ry, rw, false, mx, my, true);
+        }
 
         // left column: how the output is written
         int y = 110;
@@ -755,6 +771,9 @@ public final class BlueprintScreen extends Screen {
             case X_SELECT_BUILD -> "Selecting the last build...";
             case X_AUTO_SELECT -> "Selecting the structure around the controller...";
             case X_OPEN_FOLDER -> "Opening blueprint/exports";
+            case X_IMPORT_TURN -> "Turned to " + ImportHologram.turns() * 90 + " degrees";
+            case X_IMPORT_PLACE -> "Building the import...";
+            case X_IMPORT_CLEAR -> "Import cleared";
             case X_ADD_STRUCTURE -> "Added " + selection.name() + ": mark its corners and controller";
             case X_REMOVE_STRUCTURE -> "Structure removed";
             case M_ROTATION -> "Rotation: " + machine.rotationName();
@@ -818,6 +837,12 @@ public final class BlueprintScreen extends Screen {
                 case X_MACHINE_PAGE -> machinePage = true;
                 case X_AUTO_SELECT -> WandEditor.export(ShapeExportActions.AUTO_SELECT);
                 case X_OPEN_FOLDER -> ShapeExportClient.openExportsFolder();
+                case X_IMPORT -> status(ImportHologram.importClipboard(), T.accent());
+                case X_IMPORT_TURN -> ImportHologram.turn();
+                case X_IMPORT_PLACE -> {
+                    if (!ImportHologram.place()) status("Aim the wand at a block first", HudModel.GOLD);
+                }
+                case X_IMPORT_CLEAR -> ImportHologram.clear();
                 case M_BACK -> machinePage = false;
                 case X_RENAME -> WandPickers.typeName(this, MachineSettings.RENAME_STRUCTURE, "Name this structure",
                         selection.name());

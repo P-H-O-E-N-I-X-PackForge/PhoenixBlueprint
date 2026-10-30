@@ -96,6 +96,12 @@ So a design goes: shape it in BUILD mode, build it, switch to EXPORT, SELECT LAS
 - **Orientation arrows** at each marked controller show how the pattern is read: red = slices, green = rows (up), blue = characters.
 - The machine output adds `.langValue("Machine Name")` made from the id.
 
+## Import (editing an existing multiblock)
+
+Copy a pattern from a KubeJS script or a Java file (the `.slice(...)` or `.aisle(...)` lines and the `.where(...)` lines, ours or hand-written), then IMPORT FROM CLIPBOARD on the export page shows it as a hologram where the wand is aimed, with the controller's spot as a gold block, facing you. TURN IT rotates it in quarter turns, BUILD IT builds it (undo with left-click), CLEAR IMPORT drops it.
+
+What it understands: `Predicates.blocks("id")`, `Predicates.blocks(GTBlocks.X.get())` / `Blocks.X` / a bare `X.get()` (found by the same field scan the Java export uses), `ResourceLocation` lookups, `Predicates.abilities(PartAbility.X)` (shown as the lowest-tier hatch or bus), `Predicates.controller(...)`, `Predicates.air()`, `Predicates.any()`, `sliceRepeatable(min, max, ...)` (the minimum repeats). Only the first predicate of an `.or(...)` chain is used. Anything else (a `ChemicalHelper.getBlock(...)` frame, tags, auto abilities) is left out and reported. Blocks are placed with their default state, so facing and other properties are not copied.
+
 ## Credits
 
 The selection, controller orientation and KubeJS export started as the Copy Tool of Structure To KubeJs Aisles by Oktawia (MIT).

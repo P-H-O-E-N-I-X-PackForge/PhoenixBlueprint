@@ -28,7 +28,29 @@ public final class BlockReferences {
 
     private static final Map<String, Map<String, KubeJsExport.BlockRef>> BY_NAMESPACE = new HashMap<>();
 
+    /** Class.FIELD and FIELD to the block id, over every mod read so far (see {@link #idForField}). */
+    private static final Map<String, String> BY_QUALIFIED = new HashMap<>();
+    private static final Map<String, String> BY_FIELD = new HashMap<>();
+    private static boolean readAll = false;
+
     private BlockReferences() {}
+
+    /**
+     * The block a registry field holds, from how code names it ({@code GTBlocks.CASING_X}, or just {@code CASING_X} when the
+     * class is statically imported): the reverse of {@link #lookup}. Reads every mod's block classes the first time.
+     */
+    public static synchronized @Nullable String idForField(@Nullable String className, String field) {
+        if (!readAll) {
+            readAll = true;
+            BY_NAMESPACE.computeIfAbsent("minecraft", BlockReferences::read);
+            for (var mod : ModList.get().getMods()) BY_NAMESPACE.computeIfAbsent(mod.getModId(), BlockReferences::read);
+        }
+        if (className != null) {
+            String id = BY_QUALIFIED.get(className + "." + field);
+            if (id != null) return id;
+        }
+        return BY_FIELD.get(field);
+    }
 
     public static synchronized @Nullable KubeJsExport.BlockRef lookup(String id) {
         int colon = id.indexOf(':');
@@ -79,6 +101,8 @@ public final class BlockReferences {
                 Object value = entry ? ((Supplier<?>) raw).get() : raw;
                 if (!(value instanceof Block block)) continue;
                 String id = BuiltInRegistries.BLOCK.getKey(block).toString();
+                BY_QUALIFIED.putIfAbsent(holder.getSimpleName() + "." + field.getName(), id);
+                BY_FIELD.putIfAbsent(field.getName(), id);
                 out.putIfAbsent(id, new KubeJsExport.BlockRef(holder.getSimpleName() + "." + field.getName() +
                         (entry ? ".get()" : ""), holder.getName()));
             } catch (Throwable ignored) {

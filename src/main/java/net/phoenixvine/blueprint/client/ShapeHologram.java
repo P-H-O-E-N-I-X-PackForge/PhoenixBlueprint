@@ -84,18 +84,18 @@ public final class ShapeHologram {
             return;
         }
 
-        if (net.phoenixvine.blueprint.common.export.WandSelection.read(player.getItemInHand(wandHand))
-                .exportMode) {
-            clear();
-            return;
-        }
-
         if (mc.screen == null || isShapeScreen(mc)) {
             if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) {
                 anchor = hit.getBlockPos().relative(hit.getDirection());
             } else if (anchor == null) {
                 anchor = player.blockPosition().relative(player.getDirection(), 6);
             }
+        }
+
+        if (net.phoenixvine.blueprint.common.export.WandSelection.read(player.getItemInHand(wandHand))
+                .exportMode) {
+            clear();
+            return;
         }
         if (anchor == null) return;
 

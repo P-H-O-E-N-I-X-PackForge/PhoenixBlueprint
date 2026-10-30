@@ -18,6 +18,7 @@ import net.phoenixvine.blueprint.common.BlueprintWandItem;
 import net.phoenixvine.blueprint.common.C2SShapeUndoPacket;
 import net.phoenixvine.blueprint.common.export.C2SBlueprintWandActionPacket;
 import net.phoenixvine.blueprint.common.C2SWandEditPacket;
+import net.phoenixvine.blueprint.common.export.C2SImportPlacePacket;
 import net.phoenixvine.blueprint.common.export.S2CShapeExportPacket;
 
 /**
@@ -56,6 +57,8 @@ public class Blueprint {
         registrar.playToServer(C2SBlueprintWandActionPacket.TYPE, C2SBlueprintWandActionPacket.STREAM_CODEC,
                 C2SBlueprintWandActionPacket::handle);
         registrar.playToServer(C2SWandEditPacket.TYPE, C2SWandEditPacket.STREAM_CODEC, C2SWandEditPacket::handle);
+        registrar.playToServer(C2SImportPlacePacket.TYPE, C2SImportPlacePacket.STREAM_CODEC,
+                C2SImportPlacePacket::handle);
         registrar.playToClient(S2CShapeExportPacket.TYPE, S2CShapeExportPacket.STREAM_CODEC, S2CShapeExportPacket::handle);
     }
 
