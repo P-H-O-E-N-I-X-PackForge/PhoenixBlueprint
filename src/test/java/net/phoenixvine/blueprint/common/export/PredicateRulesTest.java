@@ -74,8 +74,7 @@ class PredicateRulesTest {
                 new PredicateRules.Rule(PredicateRules.MIN, 5, false, false, true));
 
         String kjs = KubeJsExport.format(grid, KubeJsExport.Options.DEFAULT, id -> null, "main", false, null, rules);
-        assertTrue(kjs.contains(".setMinGlobalLimited(5)
-                .or(Predicates.controller(Predicates.blocks(" +
+        assertTrue(kjs.contains(".setMinGlobalLimited(5)\n                .or(Predicates.controller(Predicates.blocks(" +
                 "definition.get())))"), kjs);
 
         KubeJsExport.Options java = new KubeJsExport.Options(false, 0, true, KubeJsExport.STYLE_FRAGMENT, true, false);
