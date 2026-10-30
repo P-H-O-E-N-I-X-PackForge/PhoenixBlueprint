@@ -26,6 +26,7 @@ public final class PredicateRules {
     public static final int FIELD_HATCHES = 2;
     public static final int FIELD_MAINTENANCE = 3;
     public static final int FIELD_RESET = 4;
+    public static final int FIELD_CONTROLLER = 5;
 
     private static final String KEY = "ShapeRules";
     private static final int MAX_RULES = 96;
@@ -36,8 +37,14 @@ public final class PredicateRules {
      * @param count       the number the mode applies to
      * @param hatches     the recipe types' hatches may take this block's place ({@code Predicates.autoAbilities})
      * @param maintenance a maintenance hatch may take its place (exactly one)
+     * @param controller  the controller may stand here ({@code .or(Predicates.controller(definition))}), as when it is built into
+     *                    the casing
      */
-    public record Rule(int mode, int count, boolean hatches, boolean maintenance) {
+    public record Rule(int mode, int count, boolean hatches, boolean maintenance, boolean controller) {
+
+        public Rule(int mode, int count, boolean hatches, boolean maintenance) {
+            this(mode, count, hatches, maintenance, false);
+        }
 
         /** No limit and no hatches. */
         public static final Rule PLAIN = new Rule(NONE, 1, false, false);
@@ -62,10 +69,12 @@ public final class PredicateRules {
         if (!rules.containsKey(key) && rules.size() >= MAX_RULES) return;
         Rule r = rules.getOrDefault(key, start);
         r = switch (field) {
-            case FIELD_MODE -> new Rule(Math.floorMod(value, 4), r.count(), r.hatches(), r.maintenance());
-            case FIELD_COUNT -> new Rule(r.mode(), Math.max(0, Math.min(MAX_COUNT, value)), r.hatches(), r.maintenance());
-            case FIELD_HATCHES -> new Rule(r.mode(), r.count(), !r.hatches(), r.maintenance());
-            case FIELD_MAINTENANCE -> new Rule(r.mode(), r.count(), r.hatches(), !r.maintenance());
+            case FIELD_MODE -> new Rule(Math.floorMod(value, 4), r.count(), r.hatches(), r.maintenance(), r.controller());
+            case FIELD_COUNT -> new Rule(r.mode(), Math.max(0, Math.min(MAX_COUNT, value)), r.hatches(), r.maintenance(),
+                    r.controller());
+            case FIELD_HATCHES -> new Rule(r.mode(), r.count(), !r.hatches(), r.maintenance(), r.controller());
+            case FIELD_MAINTENANCE -> new Rule(r.mode(), r.count(), r.hatches(), !r.maintenance(), r.controller());
+            case FIELD_CONTROLLER -> new Rule(r.mode(), r.count(), r.hatches(), r.maintenance(), !r.controller());
             default -> r;
         };
         rules.put(key, r);
@@ -81,6 +90,7 @@ public final class PredicateRules {
             t.putInt("count", entry.getValue().count());
             t.putBoolean("hatches", entry.getValue().hatches());
             t.putBoolean("maintenance", entry.getValue().maintenance());
+            t.putBoolean("controller", entry.getValue().controller());
             list.add(t);
         }
         tag.put("rules", list);
@@ -94,7 +104,7 @@ public final class PredicateRules {
             CompoundTag t = list.getCompound(i);
             out.rules.put(t.getString("key"), new Rule(Math.floorMod(t.getInt("mode"), 4),
                     Math.max(0, Math.min(MAX_COUNT, t.getInt("count"))), t.getBoolean("hatches"),
-                    t.getBoolean("maintenance")));
+                    t.getBoolean("maintenance"), t.getBoolean("controller")));
         }
         return out;
     }

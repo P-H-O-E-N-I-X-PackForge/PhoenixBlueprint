@@ -66,4 +66,27 @@ class PredicateRulesTest {
         rules.apply("appearance", PredicateRules.FIELD_MODE, 1, PredicateRules.Rule.CASING);
         assertTrue(rules.rules.get("appearance").hatches() && rules.rules.get("appearance").maintenance());
     }
+
+    @Test
+    void theControllerMayStandInTheBlocksPlace() {
+        KubeJsExport.Grid grid = new KubeJsExport.Grid(1, 1, 1, List.of(CASING), new int[] { 0 }, false);
+        Map<String, PredicateRules.Rule> rules = Map.of("block:" + CASING,
+                new PredicateRules.Rule(PredicateRules.MIN, 5, false, false, true));
+
+        String kjs = KubeJsExport.format(grid, KubeJsExport.Options.DEFAULT, id -> null, "main", false, null, rules);
+        assertTrue(kjs.contains(".setMinGlobalLimited(5)
+                .or(Predicates.controller(Predicates.blocks(" +
+                "definition.get())))"), kjs);
+
+        KubeJsExport.Options java = new KubeJsExport.Options(false, 0, true, KubeJsExport.STYLE_FRAGMENT, true, false);
+        assertTrue(KubeJsExport.format(grid, java, id -> null, "main", false, null, rules)
+                .contains(".or(Predicates.controller(definition))"));
+        KubeJsExport.Options gt7 = new KubeJsExport.Options(false, 0, true, KubeJsExport.STYLE_FRAGMENT, true, true);
+        assertTrue(KubeJsExport.format(grid, gt7, id -> null, "main", false, null, rules)
+                .contains(".or(Predicates.controller(Predicates.blocks(definition.getBlock())))"));
+
+        PredicateRules edited = new PredicateRules();
+        edited.apply("block:x", PredicateRules.FIELD_CONTROLLER, 0, PredicateRules.Rule.PLAIN);
+        assertTrue(PredicateRules.load(edited.save()).rules.get("block:x").controller());
+    }
 }

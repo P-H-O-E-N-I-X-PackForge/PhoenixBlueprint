@@ -272,7 +272,7 @@ public final class KubeJsExport {
     }
 
     /** A predicate with the limits and hatch alternatives of a rule added. */
-    static String decorate(String predicate, PredicateRules.Rule r, boolean allowsHatches) {
+    static String decorate(String predicate, PredicateRules.Rule r, boolean allowsHatches, String controllerExpr) {
         StringBuilder b = new StringBuilder(predicate);
         switch (r.mode()) {
             case PredicateRules.MIN -> b.append(".setMinGlobalLimited(").append(r.count()).append(")");
@@ -286,6 +286,7 @@ public final class KubeJsExport {
         if (allowsHatches && r.hatches()) {
             b.append("\n                .or(Predicates.autoAbilities(definition.getRecipeTypes()))");
         }
+        if (allowsHatches && r.controller()) b.append("\n                .or(").append(controllerExpr).append(")");
         return b.toString();
     }
 
@@ -294,6 +295,9 @@ public final class KubeJsExport {
                                           boolean labelled, @Nullable String appearanceId,
                                           Map<String, PredicateRules.Rule> rules) {
         boolean java = o.java();
+        // how the controller is written inside a predicate: the same forms as its own .where(...)
+        String controllerExpr = java ? (o.gt7() ? "Predicates.controller(Predicates.blocks(definition.getBlock()))" :
+                "Predicates.controller(definition)") : "Predicates.controller(Predicates.blocks(definition.get()))";
         Set<String> imports = new TreeSet<>();
         String alphabet = o.uppercaseFirst() ? UPPER_FIRST : LOWER_FIRST;
         int nextLetter = 0;
@@ -317,18 +321,18 @@ public final class KubeJsExport {
                 key = "appearance";
                 predicate = decorate(java ? javaBlock(appearanceId, refs, imports) :
                         "Predicates.blocks(\"" + jsEscape(appearanceId) + "\")",
-                        rules.getOrDefault(key, PredicateRules.Rule.CASING), true);
+                        rules.getOrDefault(key, PredicateRules.Rule.CASING), true, controllerExpr);
             } else {
                 String abilities = o.partsAsAbilities() ? partAbilities(id) : "";
                 if (!abilities.isEmpty()) {
                     key = "abilities:" + abilities;
                     predicate = abilitiesPredicate(abilities);
-                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), false);
+                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), false, controllerExpr);
                     note = id;
                 } else {
                     key = "block:" + id;
                     predicate = java ? javaBlock(id, refs, imports) : "Predicates.blocks(\"" + jsEscape(id) + "\")";
-                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), true);
+                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), true, controllerExpr);
                 }
             }
 

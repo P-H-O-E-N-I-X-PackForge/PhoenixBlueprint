@@ -112,6 +112,7 @@ public final class BlueprintScreen extends Screen {
     private static final int ROW_PLUS = 2;
     private static final int ROW_HATCHES = 3;
     private static final int ROW_MAINTENANCE = 4;
+    private static final int ROW_CONTROLLER = 5;
     private static final int M_BACK = 320;
     private static final int M_NAME = 321;
     private static final int M_ROTATION = 322;
@@ -660,7 +661,7 @@ public final class BlueprintScreen extends Screen {
         rulesScroll = Mth.clamp(rulesScroll, 0, Math.max(0, rows.size() - visible));
 
         g.drawString(font, "BLOCK", 10, RULES_TOP - 11, HudModel.DIM, false);
-        g.drawString(font, "IN IT", 126, RULES_TOP - 11, HudModel.DIM, false);
+        g.drawString(font, "IN IT", 108, RULES_TOP - 11, HudModel.DIM, false);
         if (rows.isEmpty()) {
             g.drawString(font, "Select a multiblock on the export page first.", 10, RULES_TOP + 4, HudModel.GOLD, false);
         }
@@ -672,30 +673,31 @@ public final class BlueprintScreen extends Screen {
             int y = RULES_TOP + i * RULE_ROW;
             int base = R_ROWS + index * 8;
 
-            String label = font.plainSubstrByWidth(row.label(), 112);
+            String label = font.plainSubstrByWidth(row.label(), 94);
             g.drawString(font, label, 10, y + 2, limits.rules.containsKey(row.key()) ? HudModel.WHITE : HudModel.DIM,
                     false);
-            if (isOver(mx, my, 10, y, 112, 12) && !label.equals(row.label())) tooltip = row.label();
-            g.drawString(font, "x" + row.count(), 126, y + 2, T.accent(), false);
+            if (isOver(mx, my, 10, y, 94, 12) && !label.equals(row.label())) tooltip = row.label();
+            g.drawString(font, "x" + row.count(), 108, y + 2, T.accent(), false);
 
-            chip(g, font, base + ROW_MODE, modeName(rule.mode()), 158, y, 54, rule.mode() != PredicateRules.NONE, mx, my,
+            chip(g, font, base + ROW_MODE, modeName(rule.mode()), 136, y, 52, rule.mode() != PredicateRules.NONE, mx, my,
                     false);
             if (rule.mode() != PredicateRules.NONE) {
-                chip(g, font, base + ROW_MINUS, "-", 216, y, 14, false, mx, my, false);
+                chip(g, font, base + ROW_MINUS, "-", 192, y, 12, false, mx, my, false);
                 String count = String.valueOf(rule.count());
-                g.drawString(font, count, 230 + (22 - font.width(count)) / 2, y + 2, HudModel.WHITE, false);
-                chip(g, font, base + ROW_PLUS, "+", 252, y, 14, false, mx, my, false);
+                g.drawString(font, count, 204 + (22 - font.width(count)) / 2, y + 2, HudModel.WHITE, false);
+                chip(g, font, base + ROW_PLUS, "+", 226, y, 12, false, mx, my, false);
             }
             if (!row.key().startsWith("abilities:")) {
-                chip(g, font, base + ROW_HATCHES, "HATCHES", 272, y, 52, rule.hatches(), mx, my, false);
-                chip(g, font, base + ROW_MAINTENANCE, "MAINT.", 328, y, 42, rule.maintenance(), mx, my, false);
+                chip(g, font, base + ROW_HATCHES, "HATCH", 244, y, 40, rule.hatches(), mx, my, false);
+                chip(g, font, base + ROW_MAINTENANCE, "MAINT", 288, y, 34, rule.maintenance(), mx, my, false);
+                chip(g, font, base + ROW_CONTROLLER, "CTRL", 326, y, 44, rule.controller(), mx, my, false);
             }
         }
         if (rows.size() > visible) {
             g.drawString(font, (rulesScroll + 1) + "-" + Math.min(rows.size(), rulesScroll + visible) + " of " +
                     rows.size() + " (scroll)", W - 10 - 110, RULES_TOP - 11, HudModel.DIM, false);
         }
-        footer(g, font, 10, "HATCHES lets the recipe types' hatches stand in for the block; MAINT. lets one maintenance hatch.");
+        footer(g, font, 10, "HATCH: the recipe types' hatches may stand in. MAINT: one maintenance hatch may. CTRL: the controller may.");
     }
 
     /** A click on one button of a row of the limits page. */
@@ -719,6 +721,10 @@ public final class BlueprintScreen extends Screen {
             case ROW_HATCHES -> {
                 WandEditor.rule(row.key(), PredicateRules.FIELD_HATCHES, 0);
                 status(row.label() + ": hatches " + (rule.hatches() ? "not allowed" : "allowed") + " in its place", T.accent());
+            }
+            case ROW_CONTROLLER -> {
+                WandEditor.rule(row.key(), PredicateRules.FIELD_CONTROLLER, 0);
+                status(row.label() + ": the controller " + (rule.controller() ? "may not" : "may") + " stand here", T.accent());
             }
             case ROW_MAINTENANCE -> {
                 WandEditor.rule(row.key(), PredicateRules.FIELD_MAINTENANCE, 0);
