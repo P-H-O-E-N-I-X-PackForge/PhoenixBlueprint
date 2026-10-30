@@ -1,0 +1,164 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.143'
+}
+
+version = mod_version
+group = mod_group_id
+
+tasks.named('wrapper', Wrapper).configure {
+    distributionType = Wrapper.DistributionType.BIN
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+        name = 'GTCEu Maven'
+        url = 'https://maven.gtceu.com/'
+        content {
+            includeGroup 'com.gregtechceu.gtceu'
+            includeGroup 'brachy.modularui'
+        }
+    }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org'
+    }
+    maven {
+        name = 'Devos Snapshot Maven'
+        url = 'https://mvn.devos.one/snapshots/'
+        content {
+            includeGroup 'com.tterrag.registrate'
+        }
+    }
+    exclusiveContent { // Configuration
+        forRepositories(
+                maven { url = 'https://repo.repsy.io/mvn/toma/public/' },
+                maven { url = 'https://api.repsy.io/mvn/toma/public' }
+        )
+        filter { includeGroup('dev.toma.configuration') }
+    }
+    maven {
+        name = 'Repsy'
+        url = uri('https://repo.repsy.io/mvn/user75142941/phoenixsuite')
+    }
+}
+
+base {
+    archivesName = 'phoenix-blueprint-neoforge'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            programArguments.addAll '--username', 'Phoenixvine'
+        }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+
+        configureEach {
+            systemProperty 'neoforge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+// NeoForge ships its own mixin; keep the original off the classpath (FML would see two modules)
+configurations.configureEach {
+    exclude group: 'org.spongepowered', module: 'mixin'
+}
+
+dependencies {
+    compileOnly 'org.jetbrains:annotations:26.0.2'
+
+    // GregTech Modern (required: the exporter is for its machines) and what it is built on
+    implementation("com.gregtechceu.gtceu:gtceu-${minecraft_version}:${gtm_version}") { transitive = false }
+    implementation("brachy.modularui:modularui-mc${minecraft_version}:${mui_version}") { transitive = false }
+    implementation "com.tterrag.registrate:Registrate:${registrate_version}"
+    implementation "dev.toma.configuration:configuration-${minecraft_version}:${configuration_version}"
+
+    // Phantasia: the 3D viewer for the preview. Compile only; the preview class is only used when it is installed.
+    compileOnly("net.phoenix.core:phantasia_neoforge:${phantasia_version}") { transitive = false }
+    if (!project.hasProperty('noPhantasia')) runtimeOnly("net.phoenix.core:phantasia_neoforge:${phantasia_version}") { transitive = false }
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets {
+    test {
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
+            gtm_version_min        : gtm_version_min,
+    ]
+    inputs.properties replaceProperties
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand replaceProperties
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            groupId = project.group
+            artifactId = 'phoenix-blueprint-neoforge'
+            version = project.version
+            from components.java
+        }
+    }
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}

@@ -1,0 +1,16 @@
+.gradle/
+build/
+out/
+classes/
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+run/
+run-*/
+logs/
+*.log
+*.log.gz
+repo/
+.DS_Store
