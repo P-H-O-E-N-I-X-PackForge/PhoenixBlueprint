@@ -102,6 +102,8 @@ public final class BlueprintScreen extends Screen {
     private static final int X_IMPORT_TURN = 318;
     private static final int X_IMPORT_PLACE = 319;
     private static final int X_IMPORT_CLEAR = 331;
+    private static final int X_IMPORT_LOCK = 335;
+    private static final int X_NUDGE = 340; // + 0..5
     private static final int X_RULES_PAGE = 332;
     private static final int R_BACK = 333;
     private static final int R_RESET_ALL = 334;
@@ -427,8 +429,18 @@ public final class BlueprintScreen extends Screen {
         ry += 11;
         ry += chip(g, font, X_IMPORT, "IMPORT FROM CLIPBOARD", rx, ry, rw, ImportHologram.active(), mx, my, true) + 3;
         if (ImportHologram.active()) {
-            ry += chip(g, font, X_IMPORT_TURN, "TURN IT (" + ImportHologram.turns() * 90 + ")", rx, ry, rw, false, mx, my,
-                    true) + 3;
+            ry += chip(g, font, X_IMPORT_TURN, "TURN IT", rx, ry, rw, false, mx, my, true) + 3;
+            ry += chip(g, font, X_IMPORT_LOCK, ImportHologram.locked() ? "UNLOCK IT" : "LOCK IT IN PLACE", rx, ry, rw,
+                    ImportHologram.locked(), mx, my, true) + 3;
+            if (ImportHologram.locked()) {
+                // move the locked hologram a block at a time along the world's axes
+                String[] names = { "-X", "+X", "-Y", "+Y", "-Z", "+Z" };
+                int nw = (rw - 5 * 2) / 6;
+                for (int i = 0; i < 6; i++) {
+                    chip(g, font, X_NUDGE + i, names[i], rx + i * (nw + 2), ry, nw, false, mx, my, false);
+                }
+                ry += 15;
+            }
             ry += chip(g, font, X_IMPORT_PLACE, "BUILD IT", rx, ry, rw, false, mx, my, true) + 3;
             chip(g, font, X_IMPORT_CLEAR, "CLEAR IMPORT", rx, ry, rw, false, mx, my, true);
         }
@@ -966,7 +978,8 @@ public final class BlueprintScreen extends Screen {
             case X_SELECT_BUILD -> "Selecting the last build...";
             case X_AUTO_SELECT -> "Selecting the structure around the controller...";
             case X_OPEN_FOLDER -> "Opening blueprint/exports";
-            case X_IMPORT_TURN -> "Turned to " + ImportHologram.turns() * 90 + " degrees";
+            case X_IMPORT_TURN -> "Turned a quarter turn";
+            case X_IMPORT_LOCK -> ImportHologram.locked() ? "Locked in place: aim anywhere, it stays" : "Follows the aim again";
             case X_IMPORT_PLACE -> "Building the import...";
             case X_IMPORT_CLEAR -> "Import cleared";
             case X_ADD_STRUCTURE -> "Added " + selection.name() + ": mark its corners and controller";
@@ -996,6 +1009,12 @@ public final class BlueprintScreen extends Screen {
     }
 
     private void press(int id) {
+        if (id >= X_NUDGE && id < X_NUDGE + 6) {
+            int axis = (id - X_NUDGE) / 2;
+            int sign = (id - X_NUDGE) % 2 == 0 ? -1 : 1;
+            ImportHologram.nudge(axis == 0 ? sign : 0, axis == 1 ? sign : 0, axis == 2 ? sign : 0);
+            return;
+        }
         if (id >= R_ROWS) {
             pressRule(id);
             return;
@@ -1049,6 +1068,9 @@ public final class BlueprintScreen extends Screen {
                 case X_OPEN_FOLDER -> ShapeExportClient.openExportsFolder();
                 case X_IMPORT -> status(ImportHologram.importClipboard(), T.accent());
                 case X_IMPORT_TURN -> ImportHologram.turn();
+                case X_IMPORT_LOCK -> {
+                    if (!ImportHologram.toggleLock()) status("Aim the wand at a block first", HudModel.GOLD);
+                }
                 case X_IMPORT_PLACE -> {
                     if (!ImportHologram.place()) status("Aim the wand at a block first", HudModel.GOLD);
                 }

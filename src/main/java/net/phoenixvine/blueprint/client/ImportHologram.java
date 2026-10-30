@@ -36,6 +36,11 @@ public final class ImportHologram {
     private static @Nullable ImportResolver.Placement placement;
     private static int turns = 0;
 
+    // locked in place: the hologram stays here whatever the wand is aimed at
+    private static @Nullable BlockPos lockedAt;
+    private static @Nullable Direction lockedFront;
+    private static String lockedDimension = "";
+
     private static boolean showing = false;
     private static @Nullable Direction builtFront;
     private static @Nullable ImportResolver.Placement builtFor;
@@ -62,7 +67,40 @@ public final class ImportHologram {
         return result.problems().isEmpty() ? summary : summary + "; " + result.problems().get(0);
     }
 
+    public static boolean locked() {
+        return lockedAt != null;
+    }
+
+    /** Locks the hologram where it is shown now (and facing as shown), or lets it follow the aim again. */
+    public static boolean toggleLock() {
+        if (lockedAt != null) {
+            lockedAt = null;
+            lockedFront = null;
+            return true;
+        }
+        LocalPlayer player = Minecraft.getInstance().player;
+        BlockPos at = ShapeHologram.anchor();
+        if (player == null || at == null || placement == null) return false;
+        lockedAt = at;
+        lockedFront = front(player);
+        lockedDimension = ShapeHologram.dimension();
+        return true;
+    }
+
+    /** Moves a locked hologram by whole blocks. */
+    public static void nudge(int dx, int dy, int dz) {
+        if (lockedAt != null) lockedAt = lockedAt.offset(dx, dy, dz);
+    }
+
+    /** Where it is (locked, or at the aim) and whether that is in the dimension the player is in; null when nowhere. */
+    private static @Nullable BlockPos position() {
+        if (lockedAt == null) return ShapeHologram.anchor();
+        return lockedDimension.equals(ShapeHologram.dimension()) ? lockedAt : null;
+    }
+
     public static void clear() {
+        lockedAt = null;
+        lockedFront = null;
         text = null;
         placement = null;
         RENDERER.dispose();
@@ -70,7 +108,8 @@ public final class ImportHologram {
     }
 
     public static void turn() {
-        turns = (turns + 1) % 4;
+        if (lockedFront != null) lockedFront = lockedFront.getClockWise();
+        else turns = (turns + 1) % 4;
     }
 
     public static int turns() {
@@ -82,6 +121,7 @@ public final class ImportHologram {
     }
 
     private static Direction front(LocalPlayer player) {
+        if (lockedFront != null) return lockedFront;
         Direction front = player.getDirection().getOpposite();
         for (int i = 0; i < turns; i++) front = front.getClockWise();
         return front;
@@ -90,7 +130,7 @@ public final class ImportHologram {
     /** Builds the import at the aimed spot, facing as shown. */
     public static boolean place() {
         LocalPlayer player = Minecraft.getInstance().player;
-        BlockPos anchor = ShapeHologram.anchor();
+        BlockPos anchor = position();
         if (player == null || placement == null || text == null || anchor == null) return false;
         PacketDistributor.sendToServer(new C2SImportPlacePacket(text, anchor, front(player).get3DDataValue()));
         return true;
@@ -101,7 +141,7 @@ public final class ImportHologram {
         RENDERER.clientTick();
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        BlockPos anchor = ShapeHologram.anchor();
+        BlockPos anchor = position();
         if (player == null || placement == null || anchor == null || ShapeExportClient.wand(player) == null) {
             if (showing) {
                 RENDERER.dispose();
