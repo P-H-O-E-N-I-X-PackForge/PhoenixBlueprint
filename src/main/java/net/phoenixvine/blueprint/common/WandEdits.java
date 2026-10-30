@@ -1,33 +1,39 @@
 package net.phoenixvine.blueprint.common;
 
-import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.phoenixvine.blueprint.common.export.MachineSettings;
+import net.phoenixvine.blueprint.common.export.ShapeExportActions;
+import net.phoenixvine.blueprint.common.export.WandSelection;
 
-import brachy.modularui.value.sync.SyncHandler;
-
-import java.util.function.Supplier;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * Carries the editor's changes to the server, which makes them to the plan on the wand's stack (the stack then reaches the
- * client the usual way, and the editor and the hologram read it from there).
+ * Every change the editor can make to the wand, as numbered operations with their values in a buffer. The client applies one
+ * to its own copy of the stack as soon as it is clicked (so the editor and the hologram follow at once) and sends it to the
+ * server, which applies the same operation to the real stack; the stack then reaches the client the usual way and the two agree.
+ * The operations that need the server (undo, copying, selecting the last build) do nothing on the client.
  */
-public final class BlueprintWandSyncHandler extends SyncHandler<BlueprintWandSyncHandler> {
+public final class WandEdits {
 
-    private static final int KIND = 0;
-    private static final int SIZE = 1;
-    private static final int FLAG = 2;
-    private static final int FIELD = 3;
-    private static final int SELECT = 4;
-    private static final int ADD = 5;
-    private static final int REMOVE = 6;
-    private static final int UNDO = 7;
-    private static final int RESET = 8;
-    private static final int PRESET = 9;
-    private static final int SET_KIND = 10;
-    private static final int PIN = 11;
-    private static final int UNPIN = 12;
-    private static final int EXPORT = 13;
+    public static final int KIND = 0;
+    public static final int SIZE = 1;
+    public static final int FLAG = 2;
+    public static final int FIELD = 3;
+    public static final int SELECT = 4;
+    public static final int ADD = 5;
+    public static final int REMOVE = 6;
+    public static final int UNDO = 7;
+    public static final int RESET = 8;
+    public static final int PRESET = 9;
+    public static final int SET_KIND = 10;
+    public static final int PIN = 11;
+    public static final int UNPIN = 12;
+    public static final int EXPORT = 13;
+    /** A machine setting: a field number and a text value. */
+    public static final int MACHINE = 14;
 
     public static final int FLAG_HOLLOW = 0;
     public static final int FLAG_SIT_ON_BASE = 1;
@@ -42,122 +48,50 @@ public final class BlueprintWandSyncHandler extends SyncHandler<BlueprintWandSyn
     public static final int FIELD_DY = 5;
     public static final int FIELD_DZ = 6;
 
-    private final Supplier<ItemStack> wand;
-    private final ServerPlayer serverPlayer;
-
-    public BlueprintWandSyncHandler(Supplier<ItemStack> wand, ServerPlayer serverPlayer) {
-        this.wand = wand;
-        this.serverPlayer = serverPlayer;
-        allowC2S();
-    }
-
-    // ------------------------------------------------------------------ client: ask for a change
-
-    public void changeKind(int direction) {
-        syncToServer(KIND, buf -> buf.writeVarInt(direction));
-    }
+    private WandEdits() {}
 
     /**
-     * Pins the current part (or every part) at the spot the wand is aimed at, in this dimension, where it now shows; it stays
-     * there whatever you aim at afterwards.
+     * Applies one operation to the wand stack.
+     *
+     * @param player the player on the server, or null on the client (prediction: no permission check, and the operations that
+     *               need the server are skipped)
      */
-    public void pin(boolean all, net.minecraft.core.BlockPos at, String dimension) {
-        syncToServer(PIN, buf -> {
-            buf.writeBoolean(all);
-            buf.writeBlockPos(at);
-            buf.writeUtf(dimension, 128);
-        });
-    }
-
-    /** Lets the current part (or every part) follow the aim again. */
-    public void unpin(boolean all) {
-        syncToServer(UNPIN, buf -> buf.writeBoolean(all));
-    }
-
-    /** An export action: see {@link net.phoenixvine.blueprint.common.export.ShapeExportActions}. */
-    public void export(int action) {
-        syncToServer(EXPORT, buf -> buf.writeVarInt(action));
-    }
-
-    /** Switches the current part to the shape with this ordinal. */
-    public void setKind(int ordinal) {
-        syncToServer(SET_KIND, buf -> buf.writeVarInt(ordinal));
-    }
-
-    public void setSize(int index, int value) {
-        syncToServer(SIZE, buf -> {
-            buf.writeVarInt(index);
-            buf.writeInt(value);
-        });
-    }
-
-    public void setFlag(int flag, boolean value) {
-        syncToServer(FLAG, buf -> {
-            buf.writeVarInt(flag);
-            buf.writeBoolean(value);
-        });
-    }
-
-    public void setField(int field, int value) {
-        syncToServer(FIELD, buf -> {
-            buf.writeVarInt(field);
-            buf.writeInt(value);
-        });
-    }
-
-    public void select(int direction) {
-        syncToServer(SELECT, buf -> buf.writeVarInt(direction));
-    }
-
-    public void addPart() {
-        syncToServer(ADD);
-    }
-
-    public void removePart() {
-        syncToServer(REMOVE);
-    }
-
-    public void undo() {
-        syncToServer(UNDO);
-    }
-
-    public void reset() {
-        syncToServer(RESET);
-    }
-
-    /** Turns the current shape to a common orientation: 0 flat, 1 facing Z, 2 facing X, 3 tilted 45 degrees. */
-    public void preset(int preset) {
-        syncToServer(PRESET, buf -> buf.writeVarInt(preset));
-    }
-
-    // ------------------------------------------------------------------ server: make it
-
-    @Override
-    public void readOnServer(int id, RegistryFriendlyByteBuf buf) {
-        if (serverPlayer == null || !ShapeActions.mayUse(serverPlayer)) return;
-        ItemStack stack = wand.get();
+    public static void apply(@Nullable ServerPlayer player, ItemStack stack, int op, FriendlyByteBuf buf) {
+        if (player != null && !ShapeActions.mayUse(player)) return;
         if (stack.isEmpty() || !(stack.getItem() instanceof BlueprintWandItem)) return;
 
-        if (id == UNDO) {
-            ShapeActions.undo(serverPlayer);
+        if (op == UNDO) {
+            if (player != null) ShapeActions.undo(player);
             return;
         }
-        if (id == EXPORT) {
-            net.phoenixvine.blueprint.common.export.ShapeExportActions.apply(serverPlayer, stack,
-                    buf.readVarInt());
+        if (op == EXPORT) {
+            ShapeExportActions.apply(player, stack, buf.readVarInt());
+            return;
+        }
+        if (op == MACHINE) {
+            int field = buf.readVarInt();
+            String value = buf.readUtf(256);
+            if (field == MachineSettings.RENAME_STRUCTURE) {
+                WandSelection sel = WandSelection.read(stack);
+                sel.rename(value.replaceAll("[^A-Za-z0-9_]", "_"));
+                sel.write(stack);
+            } else {
+                MachineSettings settings = MachineSettings.read(stack);
+                if (settings.apply(field, value)) settings.write(stack);
+            }
             return;
         }
 
-        ShapePlan plan = id == RESET ? new ShapePlan() : ShapePlan.read(stack);
+        ShapePlan plan = op == RESET ? new ShapePlan() : ShapePlan.read(stack);
         ShapeSpec spec = plan.current();
-        switch (id) {
+        switch (op) {
             case KIND -> {
                 ShapeKind next = buf.readVarInt() >= 0 ? spec.kind.next() : spec.kind.prev();
                 spec.setKind(next);
             }
             case PIN -> {
                 boolean all = buf.readBoolean();
-                net.minecraft.core.BlockPos at = buf.readBlockPos();
+                BlockPos at = buf.readBlockPos();
                 String dimension = buf.readUtf(128);
                 // a part sitting on the base was shown that much higher, so it is pinned that much higher
                 int shift = ShapeGenerator.baseShift(plan);
@@ -229,9 +163,7 @@ public final class BlueprintWandSyncHandler extends SyncHandler<BlueprintWandSyn
                         spec.pitch = 0;
                         spec.roll = 90;
                     }
-                    case 3 -> {
-                        spec.pitch = Math.floorMod(spec.pitch + 45, 360);
-                    }
+                    case 3 -> spec.pitch = Math.floorMod(spec.pitch + 45, 360);
                     default -> {}
                 }
             }
@@ -241,7 +173,4 @@ public final class BlueprintWandSyncHandler extends SyncHandler<BlueprintWandSyn
         }
         plan.write(stack);
     }
-
-    @Override
-    public void readOnClient(int id, RegistryFriendlyByteBuf buf) {}
 }

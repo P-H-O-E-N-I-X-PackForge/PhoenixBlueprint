@@ -137,8 +137,7 @@ public final class ShapeExportClient {
         lastDerivedFor = key;
         ResourceLocation sprite = mc.getBlockRenderer().getBlockModelShaper().getParticleIcon(state).contents().name();
         if (sprite.getPath().equals("missingno") || sprite.toString().equals(settings.derivedCasingTexture)) return;
-        PacketDistributor.sendToServer(new net.phoenixvine.blueprint.common.export.C2SShapeMachinePacket(
-                net.phoenixvine.blueprint.common.export.MachineSettings.DERIVED_CASING, sprite.toString()));
+        WandEditor.machine(net.phoenixvine.blueprint.common.export.MachineSettings.DERIVED_CASING, sprite.toString());
     }
 
     public static @Nullable ItemStack wand(LocalPlayer player) {

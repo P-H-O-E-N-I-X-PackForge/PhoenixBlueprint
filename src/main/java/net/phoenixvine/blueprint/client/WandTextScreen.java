@@ -5,19 +5,19 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.neoforged.neoforge.network.PacketDistributor;
-import net.phoenixvine.blueprint.common.export.C2SShapeMachinePacket;
 
 /** A small box to type a name into (the machine's id, a substructure's name); the result goes to the wand in a packet. */
 public final class WandTextScreen extends Screen {
 
+    private final Screen parent;
     private final int field;
     private final String label;
     private final String initial;
     private EditBox box;
 
-    public WandTextScreen(int field, String label, String initial) {
+    public WandTextScreen(Screen parent, int field, String label, String initial) {
         super(Component.literal(label));
+        this.parent = parent;
         this.field = field;
         this.label = label;
         this.initial = initial;
@@ -39,8 +39,8 @@ public final class WandTextScreen extends Screen {
 
     private void confirm() {
         String text = box.getValue().trim();
-        if (!text.isEmpty()) PacketDistributor.sendToServer(new C2SShapeMachinePacket(field, text));
-        else onClose();
+        if (!text.isEmpty()) WandEditor.machine(field, text);
+        minecraft.setScreen(parent);
     }
 
     @Override
@@ -60,6 +60,6 @@ public final class WandTextScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(null);
+        minecraft.setScreen(parent);
     }
 }

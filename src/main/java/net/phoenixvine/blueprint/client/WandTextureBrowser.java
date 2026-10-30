@@ -31,6 +31,7 @@ final class WandTextureBrowser extends Screen {
     private static final int TEXT = 0xFFFFFFFF;
     private static final int FAINT = 0xFF777788;
 
+    private final Screen parent;
     private final List<ResourceLocation> all;
     private final Consumer<ResourceLocation> onPick;
     private List<ResourceLocation> filtered = new ArrayList<>();
@@ -39,8 +40,9 @@ final class WandTextureBrowser extends Screen {
     private int scroll = 0;
     private int hovered = -1;
 
-    WandTextureBrowser(List<ResourceLocation> textures, Consumer<ResourceLocation> onPick) {
+    WandTextureBrowser(Screen parent, List<ResourceLocation> textures, Consumer<ResourceLocation> onPick) {
         super(Component.literal("Pick a texture"));
+        this.parent = parent;
         this.all = new ArrayList<>(textures);
         this.all.sort(null);
         this.onPick = onPick;
@@ -146,6 +148,7 @@ final class WandTextureBrowser extends Screen {
         if (super.mouseClicked(mx, my, button)) return true;
         if (button == 0 && hovered >= 0 && hovered < filtered.size()) {
             onPick.accept(filtered.get(hovered));
+            Minecraft.getInstance().setScreen(parent);
             return true;
         }
         return false;
@@ -159,6 +162,6 @@ final class WandTextureBrowser extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(null);
+        Minecraft.getInstance().setScreen(parent);
     }
 }

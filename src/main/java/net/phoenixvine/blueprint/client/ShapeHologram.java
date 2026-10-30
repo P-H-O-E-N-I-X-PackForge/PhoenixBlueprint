@@ -184,7 +184,7 @@ public final class ShapeHologram {
     }
 
     private static boolean isShapeScreen(Minecraft mc) {
-        return mc.screen instanceof brachy.modularui.api.IMuiScreen;
+        return mc.screen instanceof net.phoenixvine.blueprint.client.gui.BlueprintScreen;
     }
 
     @SubscribeEvent

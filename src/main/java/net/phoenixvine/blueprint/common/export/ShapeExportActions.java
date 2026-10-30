@@ -5,6 +5,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+
+import org.jetbrains.annotations.Nullable;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.phoenixvine.blueprint.common.ShapeActions;
 
@@ -35,12 +37,13 @@ public final class ShapeExportActions {
 
     private ShapeExportActions() {}
 
-    private static void say(ServerPlayer player, String text, ChatFormatting colour) {
+    private static void say(@Nullable ServerPlayer player, String text, ChatFormatting colour) {
+        if (player == null) return;
         player.displayClientMessage(Component.literal(text).withStyle(colour), true);
     }
 
-    public static void apply(ServerPlayer player, ItemStack stack, int action) {
-        if (!ShapeActions.mayUse(player)) return;
+    public static void apply(@Nullable ServerPlayer player, ItemStack stack, int action) {
+        if (player != null && !ShapeActions.mayUse(player)) return;
         WandSelection sel = WandSelection.read(stack);
         KubeJsExport.Options o = sel.options;
         if (action >= SELECT_STRUCTURE) {
@@ -98,10 +101,11 @@ public final class ShapeExportActions {
                 say(player, "Selection cleared.", ChatFormatting.GRAY);
             }
             case COPY -> {
-                copy(player, stack, sel);
+                if (player != null) copy(player, stack, sel);
                 return;
             }
             case SELECT_BUILD -> {
+                if (player == null) return;
                 BlockPos[] bounds = ShapeActions.lastBuildBounds(player);
                 if (bounds == null) {
                     say(player, "Nothing built yet to select.", ChatFormatting.RED);

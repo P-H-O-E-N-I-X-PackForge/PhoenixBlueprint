@@ -28,6 +28,7 @@ public final class RegistryPickerScreen extends Screen {
     private static final int TEXT = 0xFFFFFFFF;
     private static final int FAINT = 0xFF8888AA;
 
+    private final Screen parent;
     private final String label;
     private final List<ResourceLocation> all;
     private final Consumer<ResourceLocation> onPick;
@@ -37,8 +38,10 @@ public final class RegistryPickerScreen extends Screen {
     private int scroll = 0;
     private int left, top;
 
-    public RegistryPickerScreen(String label, Collection<ResourceLocation> ids, Consumer<ResourceLocation> onPick) {
+    public RegistryPickerScreen(Screen parent, String label, Collection<ResourceLocation> ids,
+                                Consumer<ResourceLocation> onPick) {
         super(Component.literal(label));
+        this.parent = parent;
         this.label = label;
         this.all = new ArrayList<>(ids);
         this.all.sort(null);
@@ -107,6 +110,7 @@ public final class RegistryPickerScreen extends Screen {
             int index = scroll + (int) ((my - listTop) / ROW);
             if (index >= 0 && index < shown.size() && (my - listTop) / ROW < visibleRows()) {
                 onPick.accept(shown.get(index));
+                Minecraft.getInstance().setScreen(parent);
                 return true;
             }
         }
@@ -121,6 +125,6 @@ public final class RegistryPickerScreen extends Screen {
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(null);
+        Minecraft.getInstance().setScreen(parent);
     }
 }
