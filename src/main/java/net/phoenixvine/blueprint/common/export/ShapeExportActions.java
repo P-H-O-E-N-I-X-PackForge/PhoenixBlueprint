@@ -32,6 +32,7 @@ public final class ShapeExportActions {
     public static final int CYCLE_ROTATION = 16;
     public static final int CLEAR_TYPES = 17;
     public static final int CLEAR_MODIFIERS = 18;
+    public static final int AUTO_SELECT = 19;
     /** 100 + the index of the structure to edit. */
     public static final int SELECT_STRUCTURE = 100;
 
@@ -104,6 +105,10 @@ public final class ShapeExportActions {
                 if (player != null) copy(player, stack, sel);
                 return;
             }
+            case AUTO_SELECT -> {
+                if (player == null) return;
+                autoSelect(player, sel);
+            }
             case SELECT_BUILD -> {
                 if (player == null) return;
                 BlockPos[] bounds = ShapeActions.lastBuildBounds(player);
@@ -127,6 +132,73 @@ public final class ShapeExportActions {
             }
         }
         sel.write(stack);
+    }
+
+    /** Natural terrain, which the selection from the controller does not spread through. */
+    private static boolean isTerrain(net.minecraft.world.level.block.state.BlockState state) {
+        return state.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) ||
+                state.is(net.minecraft.tags.BlockTags.BASE_STONE_NETHER) || state.is(net.minecraft.tags.BlockTags.DIRT) ||
+                state.is(net.minecraft.tags.BlockTags.SAND) || state.is(net.minecraft.world.level.block.Blocks.GRAVEL) ||
+                state.is(net.minecraft.tags.BlockTags.LEAVES) || state.is(net.minecraft.tags.BlockTags.LOGS);
+    }
+
+    /** Most blocks, and farthest from the controller, the selection from the controller will look through. */
+    private static final int AUTO_BLOCKS = 60_000;
+    private static final int AUTO_RADIUS = 64;
+
+    /**
+     * Selects the box around everything built that touches the marked controller (blocks that are not air, joined face, edge or
+     * corner to each other, not counting natural terrain), so a finished multiblock is selected in one click.
+     */
+    private static void autoSelect(ServerPlayer player, WandSelection sel) {
+        if (sel.controller == null) {
+            say(player, "Mark the controller first.", ChatFormatting.RED);
+            return;
+        }
+        var level = player.level();
+        BlockPos start = sel.controller;
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        java.util.HashSet<BlockPos> seen = new java.util.HashSet<>();
+        queue.add(start);
+        seen.add(start);
+        int minX = start.getX(), minY = start.getY(), minZ = start.getZ();
+        int maxX = minX, maxY = minY, maxZ = minZ;
+        boolean cut = false;
+        while (!queue.isEmpty()) {
+            BlockPos at = queue.poll();
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                        BlockPos next = at.offset(dx, dy, dz);
+                        if (Math.abs(next.getX() - start.getX()) > AUTO_RADIUS ||
+                                Math.abs(next.getY() - start.getY()) > AUTO_RADIUS ||
+                                Math.abs(next.getZ() - start.getZ()) > AUTO_RADIUS || seen.contains(next)) {
+                            continue;
+                        }
+                        var state = level.getBlockState(next);
+                        if (state.isAir() || isTerrain(state)) continue;
+                        if (seen.size() >= AUTO_BLOCKS) {
+                            cut = true;
+                            continue;
+                        }
+                        seen.add(next);
+                        queue.add(next);
+                        minX = Math.min(minX, next.getX());
+                        minY = Math.min(minY, next.getY());
+                        minZ = Math.min(minZ, next.getZ());
+                        maxX = Math.max(maxX, next.getX());
+                        maxY = Math.max(maxY, next.getY());
+                        maxZ = Math.max(maxZ, next.getZ());
+                    }
+                }
+            }
+        }
+        sel.corner1 = new BlockPos(minX, minY, minZ);
+        sel.corner2 = new BlockPos(maxX, maxY, maxZ);
+        say(player, cut ? "Selected the first " + AUTO_BLOCKS + " connected blocks: it may be too big." :
+                "Selected " + seen.size() + " connected blocks around the controller.",
+                cut ? ChatFormatting.GOLD : ChatFormatting.AQUA);
     }
 
     /** A right click on a block in export mode: a corner (sneak: the first), or the controller in controller mode. */
@@ -231,7 +303,8 @@ public final class ShapeExportActions {
             say(player, "The result is too big to send to you.", ChatFormatting.RED);
             return;
         }
-        PacketDistributor.sendToPlayer(player, new S2CShapeExportPacket(text.toString()));
+        String fileName = (machine ? settings.id() : "pattern") + (sel.options.java() ? ".java" : ".js");
+        PacketDistributor.sendToPlayer(player, new S2CShapeExportPacket(text.toString(), fileName));
         say(player, (ready.size() > 1 ? "Copied " + ready.size() + " structures" : "Copied blocks") +
                 (turned ? ", turned to face the controller." : "."), ChatFormatting.AQUA);
     }

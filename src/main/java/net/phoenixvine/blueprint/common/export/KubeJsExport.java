@@ -404,6 +404,7 @@ public final class KubeJsExport {
         Set<String> imports = new TreeSet<>();
         StringBuilder chain = new StringBuilder();
 
+        chain.append("        .langValue(\"").append(jsEscape(m.displayName())).append("\")\n");
         chain.append("        .rotationState(RotationState.").append(m.rotationName()).append(")\n");
 
         if (!m.recipeTypes.isEmpty()) {

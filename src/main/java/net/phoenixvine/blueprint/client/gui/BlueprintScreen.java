@@ -93,6 +93,8 @@ public final class BlueprintScreen extends Screen {
     private static final int X_PREVIEW = 312;
     private static final int X_MACHINE_PAGE = 313;
     private static final int X_RENAME = 314;
+    private static final int X_AUTO_SELECT = 315;
+    private static final int X_OPEN_FOLDER = 316;
     private static final int M_BACK = 320;
     private static final int M_NAME = 321;
     private static final int M_ROTATION = 322;
@@ -145,6 +147,11 @@ public final class BlueprintScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /** A note from the client (an export was saved...) shown in the footer. */
+    public void note(String text) {
+        status(text, T.accent());
     }
 
     /** A message from the server (copied, selected, nothing to undo...) shown in the footer. */
@@ -380,13 +387,15 @@ public final class BlueprintScreen extends Screen {
         ry += chip(g, font, X_CONTROLLER, selection.controllerMode ? "MARKING CONTROLLER" : "MARK CONTROLLER", rx, ry,
                 rw, selection.controllerMode, mx, my, true) + 3;
         ry += chip(g, font, X_SELECT_BUILD, "SELECT LAST BUILD", rx, ry, rw, false, mx, my, true) + 3;
+        ry += chip(g, font, X_AUTO_SELECT, "SELECT FROM CONTROLLER", rx, ry, rw, false, mx, my, true) + 3;
         ry += chip(g, font, X_CLEAR, "CLEAR SELECTION", rx, ry, rw, false, mx, my, true) + 3;
         ry += chip(g, font, X_COPY, "COPY OUTPUT", rx, ry, rw, sel.hasBothCorners(), mx, my, true) + 3;
         if (ShapeExportClient.phantasiaAvailable()) {
             ry += chip(g, font, X_PREVIEW, "PREVIEW (PHANTASIA)", rx, ry, rw, false, mx, my, true) + 3;
         }
-        chip(g, font, X_MACHINE_PAGE, "MACHINE DEFINITION >", rx, ry, rw, o.style() == KubeJsExport.STYLE_MACHINE, mx,
-                my, true);
+        ry += chip(g, font, X_MACHINE_PAGE, "MACHINE DEFINITION >", rx, ry, rw, o.style() == KubeJsExport.STYLE_MACHINE,
+                mx, my, true) + 3;
+        chip(g, font, X_OPEN_FOLDER, "OPEN EXPORTS FOLDER", rx, ry, rw, false, mx, my, true);
 
         // left column: how the output is written
         int y = 110;
@@ -404,9 +413,29 @@ public final class BlueprintScreen extends Screen {
                 o.gt7(), mx, my, true) + 3;
 
         y += 4;
+        for (var finding : findings()) {
+            if (y > H - 38) break;
+            int color = switch (finding.level()) {
+                case ERROR -> HudModel.RED;
+                case WARNING -> HudModel.GOLD;
+                default -> HudModel.DIM;
+            };
+            String mark = switch (finding.level()) {
+                case ERROR -> "! ";
+                case WARNING -> "* ";
+                default -> "- ";
+            };
+            for (var line : font.split(Component.literal(mark + finding.text()), W - 20)) {
+                if (y > H - 38) break;
+                g.drawString(font, line, 10, y, color, false);
+                y += 10;
+            }
+        }
+        y += 2;
         String help = "Right-click a block: corner 2 (sneak: corner 1). Mark the controller first if it is not a block " +
                 "facing south. Right-click air or COPY OUTPUT to put the result on your clipboard. Build a design in " +
-                "BUILD mode, then SELECT LAST BUILD.";
+                "BUILD mode, then SELECT LAST BUILD. Arrows at the controller: red = slices, green = rows (up), blue = " +
+                "characters.";
         for (var line : font.split(Component.literal(help), W - 20)) {
             if (y > H - 38) break;
             g.drawString(font, line, 10, y, HudModel.DIM, false);
@@ -482,6 +511,20 @@ public final class BlueprintScreen extends Screen {
         }
 
         footer(g, font, 10, "Sneak + right-click air opens this editor.");
+    }
+
+    private List<net.phoenixvine.blueprint.common.export.ExportCheck.Finding> cachedFindings = List.of();
+    private long findingsAt = 0;
+
+    /** The export check's findings, worked out at most twice a second since they look through the selected blocks. */
+    private List<net.phoenixvine.blueprint.common.export.ExportCheck.Finding> findings() {
+        long now = System.currentTimeMillis();
+        var level = Minecraft.getInstance().level;
+        if (level != null && now - findingsAt > 500) {
+            findingsAt = now;
+            cachedFindings = net.phoenixvine.blueprint.common.export.ExportCheck.check(level, selection, machine);
+        }
+        return cachedFindings;
     }
 
     private int listRow(GuiGraphics g, Font font, List<String> values, int y, int x, int vw, int addId, int clearId,
@@ -710,6 +753,8 @@ public final class BlueprintScreen extends Screen {
             case X_CLEAR -> "Selection cleared";
             case X_COPY -> "Copying the output...";
             case X_SELECT_BUILD -> "Selecting the last build...";
+            case X_AUTO_SELECT -> "Selecting the structure around the controller...";
+            case X_OPEN_FOLDER -> "Opening blueprint/exports";
             case X_ADD_STRUCTURE -> "Added " + selection.name() + ": mark its corners and controller";
             case X_REMOVE_STRUCTURE -> "Structure removed";
             case M_ROTATION -> "Rotation: " + machine.rotationName();
@@ -771,6 +816,8 @@ public final class BlueprintScreen extends Screen {
                 case X_ADD_STRUCTURE -> WandEditor.export(ShapeExportActions.ADD_STRUCTURE);
                 case X_REMOVE_STRUCTURE -> WandEditor.export(ShapeExportActions.REMOVE_STRUCTURE);
                 case X_MACHINE_PAGE -> machinePage = true;
+                case X_AUTO_SELECT -> WandEditor.export(ShapeExportActions.AUTO_SELECT);
+                case X_OPEN_FOLDER -> ShapeExportClient.openExportsFolder();
                 case M_BACK -> machinePage = false;
                 case X_RENAME -> WandPickers.typeName(this, MachineSettings.RENAME_STRUCTURE, "Name this structure",
                         selection.name());

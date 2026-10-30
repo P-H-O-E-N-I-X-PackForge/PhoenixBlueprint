@@ -149,8 +149,12 @@ public final class ShapeExportClient {
     // ------------------------------------------------------------------ clipboard
 
     /** Copies the text; one too long for the clipboard is written to packet.txt and its path is copied instead. */
-    public static void setClipboard(String text) {
+    public static void setClipboard(String text, String fileName) {
         Minecraft mc = Minecraft.getInstance();
+        String saved = save(text, fileName);
+        if (saved != null && mc.screen instanceof net.phoenixvine.blueprint.client.gui.BlueprintScreen editor) {
+            editor.note("Saved to " + saved);
+        }
         if (text.length() <= MAX_CLIPBOARD) {
             mc.keyboardHandler.setClipboard(text);
             return;
@@ -165,6 +169,43 @@ public final class ShapeExportClient {
                     Component.literal("The selection was too big for the clipboard; its file path was copied instead")));
         } catch (Exception e) {
             mc.keyboardHandler.setClipboard(text.substring(0, MAX_CLIPBOARD));
+        }
+    }
+
+    private static final int KEEP_EXPORTS = 50;
+
+    /** Where every export is also written, newest last: blueprint/exports in the game folder. */
+    public static Path exportsDir() {
+        return net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("blueprint").resolve("exports");
+    }
+
+    /** Writes an export to the exports folder (keeping the newest few) and returns its path from the game folder, or null. */
+    private static @Nullable String save(String text, String fileName) {
+        try {
+            Path dir = exportsDir();
+            Files.createDirectories(dir);
+            String stamp = java.time.LocalDateTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+            Path file = dir.resolve(stamp + "-" + fileName.replaceAll("[^A-Za-z0-9_.-]", "_"));
+            Files.writeString(file, text);
+            try (var list = Files.list(dir)) {
+                var old = list.sorted(java.util.Comparator.comparing(Path::getFileName).reversed())
+                        .skip(KEEP_EXPORTS).toList();
+                for (Path p : old) Files.deleteIfExists(p);
+            }
+            return "blueprint/exports/" + file.getFileName();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Opens the exports folder in the system's file browser. */
+    public static void openExportsFolder() {
+        try {
+            Files.createDirectories(exportsDir());
+            net.minecraft.Util.getPlatform().openFile(exportsDir().toFile());
+        } catch (Exception ignored) {
+            // no file browser to open
         }
     }
 
@@ -239,6 +280,27 @@ public final class ShapeExportClient {
             box(pose, sel.corner2, sel.corner2.offset(1, 1, 1), 0f, 1f, 0f);
         }
         if (sel.controller != null) box(pose, sel.controller, sel.controller.offset(1, 1, 1), 1f, 0.5f, 0f);
+
+        // which way the pattern is read from each controller: slices red, rows (up) green, characters blue
+        if (mc.level != null) {
+            for (var s : all) {
+                if (s.controller == null) continue;
+                int[] f = net.phoenixvine.blueprint.common.export.ControllerFrame.frame(mc.level, s.controller);
+                Vec3 c = Vec3.atCenterOf(s.controller);
+                bar(pose, c, f[0], f[1], f[2], 1f, 0.25f, 0.25f);
+                bar(pose, c, f[3], f[4], f[5], 0.25f, 1f, 0.25f);
+                bar(pose, c, f[6], f[7], f[8], 0.35f, 0.55f, 1f);
+            }
+        }
+    }
+
+    /** A line from the middle of a block two and a half blocks along a direction. */
+    private static void bar(PoseStack pose, Vec3 from, int dx, int dy, int dz, float r, float g, float b) {
+        Vec3 to = from.add(dx * 2.5, dy * 2.5, dz * 2.5);
+        AABB box = new AABB(Math.min(from.x, to.x) - 0.04, Math.min(from.y, to.y) - 0.04, Math.min(from.z, to.z) - 0.04,
+                Math.max(from.x, to.x) + 0.04, Math.max(from.y, to.y) + 0.04, Math.max(from.z, to.z) + 0.04);
+        drawBox(pose, box, r, g, b, 0.35f, true);
+        drawBox(pose, box, r, g, b, 1f, false);
     }
 
     /** A box as it is seen normally and, fainter, through the blocks in front of it. */
@@ -249,10 +311,14 @@ public final class ShapeExportClient {
 
     private static void draw(PoseStack pose, BlockPos min, BlockPos max, float r, float g, float b, float a,
                              boolean throughWalls) {
+        drawBox(pose, new AABB(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ()), r, g, b, a,
+                throughWalls);
+    }
+
+    private static void drawBox(PoseStack pose, AABB world, float r, float g, float b, float a, boolean throughWalls) {
         Minecraft mc = Minecraft.getInstance();
         Vec3 cam = mc.gameRenderer.getMainCamera().getPosition();
-        AABB box = new AABB(min.getX(), min.getY(), min.getZ(), max.getX(), max.getY(), max.getZ())
-                .move(-cam.x, -cam.y, -cam.z);
+        AABB box = world.move(-cam.x, -cam.y, -cam.z);
         MultiBufferSource.BufferSource source = mc.renderBuffers().bufferSource();
         if (throughWalls) RenderSystem.disableDepthTest();
         VertexConsumer buffer = source.getBuffer(RenderType.lines());

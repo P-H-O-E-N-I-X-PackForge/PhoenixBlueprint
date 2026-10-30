@@ -186,6 +186,7 @@ class KubeJsExportTest {
         String text = KubeJsExport.machine(List.of(pattern), java, ctx);
         assertTrue(text.startsWith("public static final MachineEntry<MultiblockMachineDefinition> DIMENSIONAL_ANCHOR = " +
                 "REGISTRATE\n        .multiblock(\"dimensional_anchor\", WorkableElectricMultiblockMachine::new)\n" +
+                "        .langValue(\"Dimensional Anchor\")\n" +
                 "        .rotationState(RotationState.ALL)\n" +
                 "        .recipeTypes(PhoenixRecipeTypes.DIMENSIONAL_ANCHORING_RECIPES)\n" +
                 "        .recipeModifiers(GTRecipeModifiers.OC_PERFECT)\n" +
@@ -206,6 +207,7 @@ class KubeJsExportTest {
                 m.appearanceBlock)), kjs, ctx);
         assertTrue(text.startsWith("GTCEuStartupEvents.registry('gtceu:machine', event => {\n" +
                 "    event.create(\"dimensional_anchor\", \"multiblock\")\n" +
+                "        .langValue(\"Dimensional Anchor\")\n" +
                 "        .rotationState(RotationState.ALL)\n" +
                 "        .recipeTypes(\"phoenixcore:dimensional_anchoring\")\n"), text);
         assertTrue(text.contains(".appearanceBlock(() => Block.getBlock(\"gtceu:solid_machine_casing\"))"), text);
@@ -227,5 +229,13 @@ class KubeJsExportTest {
         assertEquals("minecraft:glass", picked.appearanceBlock);
         assertEquals("minecraft:block/glass", picked.casingTexture);
         assertEquals("", new MachineSettings().appearanceBlock);
+    }
+
+    @Test
+    void theIdBecomesANameToShow() {
+        MachineSettings m = new MachineSettings();
+        m.apply(MachineSettings.NAME, "large_chemical_reactor");
+        assertEquals("Large Chemical Reactor", m.displayName());
+        assertEquals("My Machine", new MachineSettings().displayName());
     }
 }

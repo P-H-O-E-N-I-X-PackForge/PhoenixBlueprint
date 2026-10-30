@@ -65,6 +65,17 @@ public final class MachineSettings {
         return id.toUpperCase(Locale.ROOT);
     }
 
+    /** The id as a name to show: "dimensional_anchor" is "Dimensional Anchor". */
+    public String displayName() {
+        StringBuilder out = new StringBuilder();
+        for (String word : id().split("_")) {
+            if (word.isEmpty()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return out.toString();
+    }
+
     /** The machine id as written in the registration; never empty. */
     public String id() {
         return name.isBlank() ? "my_machine" : name;

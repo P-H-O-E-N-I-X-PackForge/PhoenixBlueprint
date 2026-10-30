@@ -88,6 +88,14 @@ The **Language** chip switches the output to Java for a machine definition: `'a'
 
 So a design goes: shape it in BUILD mode, build it, switch to EXPORT, SELECT LAST BUILD, mark the controller, COPY.
 
+## Export extras
+
+- **Warnings** on the export page, checked against the blocks in the selection: no corners, no controller (or one outside the selection or on air), more than 91 kinds of block, no energy or maintenance hatch, and for the machine output no appearance block, recipe type or overlay texture.
+- **SELECT FROM CONTROLLER** selects the box around everything built that touches the marked controller (not counting natural terrain: stone, dirt, sand, gravel, leaves, logs; at most 60,000 blocks and 64 from the controller), so a finished multiblock is selected in one click.
+- **Saved exports:** every copy is also written to `blueprint/exports/` in the game folder as `<date>-<id>.js` or `.java` (the newest 50 are kept); OPEN EXPORTS FOLDER opens it.
+- **Orientation arrows** at each marked controller show how the pattern is read: red = slices, green = rows (up), blue = characters.
+- The machine output adds `.langValue("Machine Name")` made from the id.
+
 ## Credits
 
 The selection, controller orientation and KubeJS export started as the Copy Tool of Structure To KubeJs Aisles by Oktawia (MIT).
