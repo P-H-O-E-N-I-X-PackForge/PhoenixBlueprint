@@ -52,7 +52,7 @@ A plan may cover at most 60,000 blocks.
 - `common/`: `ShapeKind`, `ShapeSpec`, `ShapePlan` (what is stored on the wand), `ShapeGenerator`
   (turns a plan into blocks; tested in `ShapeGeneratorTest`), `ShapeActions` (placing and undo), `BlueprintWandItem`.
 - `client/ShapeHologram`: the preview, drawn by `client/render/GhostRenderer`.
-- `client/gui/BlueprintScreen`: the editor, a plain vanilla screen laid out at 380 x 308 and scaled to fit the window. Changes are applied to the wand in the hand at once and sent to the server (`common/WandEdits`, `C2SWandEditPacket`), so the editor and the hologram follow as you click.
+- `client/gui/BlueprintScreen`: the editor, a plain vanilla screen laid out at 380 x 336 and scaled to fit the window. Changes are applied to the wand in the hand at once and sent to the server (`common/WandEdits`, `C2SWandEditPacket`), so the editor and the hologram follow as you click.
 
 ## Export mode (multiblock export to KubeJS)
 

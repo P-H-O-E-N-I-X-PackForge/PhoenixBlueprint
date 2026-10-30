@@ -48,7 +48,7 @@ import java.util.Map;
 public final class BlueprintScreen extends Screen {
 
     private static final int W = 380;
-    private static final int H = 308;
+    private static final int H = 336;
     private static final HudTheme T = HudTheme.TEAL;
 
     /** How long a click lights its button, and how long the latest message stays in the footer. */
@@ -411,7 +411,7 @@ public final class BlueprintScreen extends Screen {
         ry += chip(g, font, X_CONTROLLER, selection.controllerMode ? "MARKING CONTROLLER" : "MARK CONTROLLER", rx, ry,
                 rw, selection.controllerMode, mx, my, true) + 3;
         ry += chip(g, font, X_SELECT_BUILD, "SELECT LAST BUILD", rx, ry, rw, false, mx, my, true) + 3;
-        ry += chip(g, font, X_AUTO_SELECT, "SELECT FROM CONTROLLER", rx, ry, rw, false, mx, my, true) + 3;
+        ry += chip(g, font, X_AUTO_SELECT, "FROM CONTROLLER", rx, ry, rw, false, mx, my, true) + 3;
         ry += chip(g, font, X_CLEAR, "CLEAR SELECTION", rx, ry, rw, false, mx, my, true) + 3;
         ry += chip(g, font, X_COPY, "COPY OUTPUT", rx, ry, rw, sel.hasBothCorners(), mx, my, true) + 3;
         if (ShapeExportClient.phantasiaAvailable()) {
@@ -449,7 +449,9 @@ public final class BlueprintScreen extends Screen {
                 o.gt7(), mx, my, true) + 3;
 
         y += 4;
-        for (var finding : findings()) {
+        var sorted = new ArrayList<>(findings());
+        sorted.sort(java.util.Comparator.comparing(f -> f.level().ordinal()));
+        for (var finding : sorted) {
             if (y > H - 38) break;
             int color = switch (finding.level()) {
                 case ERROR -> HudModel.RED;
@@ -461,18 +463,16 @@ public final class BlueprintScreen extends Screen {
                 case WARNING -> "* ";
                 default -> "- ";
             };
-            for (var line : font.split(Component.literal(mark + finding.text()), W - 20)) {
+            for (var line : font.split(Component.literal(mark + finding.text()), lw)) {
                 if (y > H - 38) break;
                 g.drawString(font, line, 10, y, color, false);
                 y += 10;
             }
         }
         y += 2;
-        String help = "Right-click a block: corner 2 (sneak: corner 1). Mark the controller first if it is not a block " +
-                "facing south. Right-click air or COPY OUTPUT to put the result on your clipboard. Build a design in " +
-                "BUILD mode, then SELECT LAST BUILD. Arrows at the controller: red = slices, green = rows (up), blue = " +
-                "characters.";
-        for (var line : font.split(Component.literal(help), W - 20)) {
+        String help = "Right-click a block: corner 2 (sneak: corner 1). Right-click air or COPY OUTPUT to copy. " +
+                "Arrows at the controller: red = slices, green = rows (up), blue = characters.";
+        for (var line : font.split(Component.literal(help), lw)) {
             if (y > H - 38) break;
             g.drawString(font, line, 10, y, HudModel.DIM, false);
             y += 10;
