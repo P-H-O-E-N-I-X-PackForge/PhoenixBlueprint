@@ -92,6 +92,15 @@ public final class WandEditor {
         send(WandEdits.EXPORT, buf -> buf.writeVarInt(action));
     }
 
+    /** Changes a limit on a kind of block: see {@code PredicateRules}. */
+    public static void rule(String key, int field, int value) {
+        send(WandEdits.RULE, buf -> {
+            buf.writeUtf(key, 200);
+            buf.writeVarInt(field);
+            buf.writeVarInt(value);
+        });
+    }
+
     /** A machine setting (or a structure name) by field number: see {@code MachineSettings}. */
     public static void machine(int field, String value) {
         send(WandEdits.MACHINE, buf -> {

@@ -96,6 +96,10 @@ So a design goes: shape it in BUILD mode, build it, switch to EXPORT, SELECT LAS
 - **Orientation arrows** at each marked controller show how the pattern is read: red = slices, green = rows (up), blue = characters.
 - The machine output adds `.langValue("Machine Name")` made from the id.
 
+## Limits per block
+
+LIMITS PER BLOCK on the export page lists the kinds of predicate in the selected multiblock (each block, each group of hatches written as an ability, and the machine's casing), most common first, with how many of each there are. For each one the mode button cycles any number, at least, at most and exactly; `-` and `+` change the number (shift for 5); HATCHES lets the recipe types' hatches stand in for the block (`.or(Predicates.autoAbilities(definition.getRecipeTypes()))`) and MAINT. lets one maintenance hatch (`.or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))`). They are written when you copy, as `.setMinGlobalLimited(n)`, `.setMaxGlobalLimited(n)` or `.setExactLimit(n)` on the predicate. The machine's casing starts with hatches and maintenance allowed; every other block starts with nothing. Limits are kept on the wand by predicate, so they apply to every structure of the machine.
+
 ## Import (editing an existing multiblock)
 
 Copy a pattern from a KubeJS script or a Java file (the `.slice(...)` or `.aisle(...)` lines and the `.where(...)` lines, ours or hand-written), then IMPORT FROM CLIPBOARD on the export page shows it as a hologram where the wand is aimed, with the controller's spot as a gold block, facing you. TURN IT rotates it in quarter turns, BUILD IT builds it (undo with left-click), CLEAR IMPORT drops it.

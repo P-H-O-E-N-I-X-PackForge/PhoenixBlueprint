@@ -5,6 +5,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.phoenixvine.blueprint.common.export.MachineSettings;
+import net.phoenixvine.blueprint.common.export.PredicateRules;
 import net.phoenixvine.blueprint.common.export.ShapeExportActions;
 import net.phoenixvine.blueprint.common.export.WandSelection;
 
@@ -34,6 +35,8 @@ public final class WandEdits {
     public static final int EXPORT = 13;
     /** A machine setting: a field number and a text value. */
     public static final int MACHINE = 14;
+    /** A limit on a kind of block: a predicate key, a field and a value. */
+    public static final int RULE = 15;
 
     public static final int FLAG_HOLLOW = 0;
     public static final int FLAG_SIT_ON_BASE = 1;
@@ -79,6 +82,17 @@ public final class WandEdits {
                 MachineSettings settings = MachineSettings.read(stack);
                 if (settings.apply(field, value)) settings.write(stack);
             }
+            return;
+        }
+
+        if (op == RULE) {
+            String key = buf.readUtf(200);
+            int field = buf.readVarInt();
+            int value = buf.readVarInt();
+            PredicateRules rules = PredicateRules.read(stack);
+            rules.apply(key, field, value, key.equals("appearance") ? PredicateRules.Rule.CASING :
+                    PredicateRules.Rule.PLAIN);
+            rules.write(stack);
             return;
         }
 

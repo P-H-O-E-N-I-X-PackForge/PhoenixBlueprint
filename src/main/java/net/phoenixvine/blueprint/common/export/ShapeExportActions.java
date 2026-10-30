@@ -258,6 +258,7 @@ public final class ShapeExportActions {
         // no appearance block picked: the block marked as the controller; no casing texture: the appearance block's
         MachineSettings settings = machine ? MachineSettings.read(stack).effective(controllerBlock) : null;
         java.util.List<String> patterns = new java.util.ArrayList<>();
+        var rules = PredicateRules.read(stack).rules;
 
         StringBuilder text = new StringBuilder();
         boolean turned = false;
@@ -283,7 +284,7 @@ public final class ShapeExportActions {
                 return;
             }
             String part = KubeJsExport.format(grid, sel.options, BlockReferences::lookup, s.name, several,
-                    machine && !settings.appearanceBlock.isEmpty() ? settings.appearanceBlock : null);
+                    machine && !settings.appearanceBlock.isEmpty() ? settings.appearanceBlock : null, rules);
             if (part == null) {
                 say(player, "Too many different blocks in \"" + s.name + "\" (the limit is " +
                         KubeJsExport.MAX_TYPES + ").", ChatFormatting.RED);

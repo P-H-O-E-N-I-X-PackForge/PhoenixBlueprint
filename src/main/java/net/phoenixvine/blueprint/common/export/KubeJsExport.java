@@ -255,6 +255,44 @@ public final class KubeJsExport {
      */
     public static @Nullable String format(Grid grid, Options o, Function<String, BlockRef> refs, @Nullable String name,
                                           boolean labelled, @Nullable String appearanceId) {
+        return format(grid, o, refs, name, labelled, appearanceId, Map.of());
+    }
+
+    /**
+     * The key of the predicate a block is written as, which is what limits are kept under: "block:id", "abilities:NAME" for
+     * hatches and buses written as abilities, "appearance" for the machine's casing, "air", or null for air written as a space.
+     */
+    public static @Nullable String keyFor(String id, Options o, @Nullable String appearanceId) {
+        if (isAir(id)) return o.air() == AIR_SPACE ? null : o.air() == AIR_PREDICATE ? "air" : "block:" + id;
+        if (appearanceId != null && (id.equals(appearanceId) || o.partsAsAbilities() && !partAbilities(id).isEmpty())) {
+            return "appearance";
+        }
+        String abilities = o.partsAsAbilities() ? partAbilities(id) : "";
+        return abilities.isEmpty() ? "block:" + id : "abilities:" + abilities;
+    }
+
+    /** A predicate with the limits and hatch alternatives of a rule added. */
+    static String decorate(String predicate, PredicateRules.Rule r, boolean allowsHatches) {
+        StringBuilder b = new StringBuilder(predicate);
+        switch (r.mode()) {
+            case PredicateRules.MIN -> b.append(".setMinGlobalLimited(").append(r.count()).append(")");
+            case PredicateRules.MAX -> b.append(".setMaxGlobalLimited(").append(r.count()).append(")");
+            case PredicateRules.EXACT -> b.append(".setExactLimit(").append(r.count()).append(")");
+            default -> {}
+        }
+        if (allowsHatches && r.maintenance()) {
+            b.append("\n                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))");
+        }
+        if (allowsHatches && r.hatches()) {
+            b.append("\n                .or(Predicates.autoAbilities(definition.getRecipeTypes()))");
+        }
+        return b.toString();
+    }
+
+    /** As above, with limits on the predicates (by {@link #keyFor}). */
+    public static @Nullable String format(Grid grid, Options o, Function<String, BlockRef> refs, @Nullable String name,
+                                          boolean labelled, @Nullable String appearanceId,
+                                          Map<String, PredicateRules.Rule> rules) {
         boolean java = o.java();
         Set<String> imports = new TreeSet<>();
         String alphabet = o.uppercaseFirst() ? UPPER_FIRST : LOWER_FIRST;
@@ -277,19 +315,20 @@ public final class KubeJsExport {
             } else if (appearanceId != null && (id.equals(appearanceId) ||
                     o.partsAsAbilities() && !partAbilities(id).isEmpty())) {
                 key = "appearance";
-                predicate = (java ? javaBlock(appearanceId, refs, imports) :
-                        "Predicates.blocks(\"" + jsEscape(appearanceId) + "\")") +
-                        "\n                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))" +
-                        "\n                .or(Predicates.autoAbilities(definition.getRecipeTypes()))";
+                predicate = decorate(java ? javaBlock(appearanceId, refs, imports) :
+                        "Predicates.blocks(\"" + jsEscape(appearanceId) + "\")",
+                        rules.getOrDefault(key, PredicateRules.Rule.CASING), true);
             } else {
                 String abilities = o.partsAsAbilities() ? partAbilities(id) : "";
                 if (!abilities.isEmpty()) {
                     key = "abilities:" + abilities;
                     predicate = abilitiesPredicate(abilities);
+                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), false);
                     note = id;
                 } else {
                     key = "block:" + id;
                     predicate = java ? javaBlock(id, refs, imports) : "Predicates.blocks(\"" + jsEscape(id) + "\")";
+                    if (rules.containsKey(key)) predicate = decorate(predicate, rules.get(key), true);
                 }
             }
 

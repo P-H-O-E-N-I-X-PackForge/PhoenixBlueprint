@@ -27,7 +27,9 @@ import net.phoenixvine.blueprint.common.ShapeKind;
 import net.phoenixvine.blueprint.common.ShapePlan;
 import net.phoenixvine.blueprint.common.ShapeSpec;
 import net.phoenixvine.blueprint.common.WandEdits;
+import net.phoenixvine.blueprint.common.export.ExportCheck;
 import net.phoenixvine.blueprint.common.export.KubeJsExport;
+import net.phoenixvine.blueprint.common.export.PredicateRules;
 import net.phoenixvine.blueprint.common.export.MachineSettings;
 import net.phoenixvine.blueprint.common.export.ShapeExportActions;
 import net.phoenixvine.blueprint.common.export.WandSelection;
@@ -100,6 +102,16 @@ public final class BlueprintScreen extends Screen {
     private static final int X_IMPORT_TURN = 318;
     private static final int X_IMPORT_PLACE = 319;
     private static final int X_IMPORT_CLEAR = 331;
+    private static final int X_RULES_PAGE = 332;
+    private static final int R_BACK = 333;
+    private static final int R_RESET_ALL = 334;
+    /** The buttons of the limits page are numbered from here: 8 per row, then which button (see ROW_*). */
+    private static final int R_ROWS = 1000;
+    private static final int ROW_MODE = 0;
+    private static final int ROW_MINUS = 1;
+    private static final int ROW_PLUS = 2;
+    private static final int ROW_HATCHES = 3;
+    private static final int ROW_MAINTENANCE = 4;
     private static final int M_BACK = 320;
     private static final int M_NAME = 321;
     private static final int M_ROTATION = 322;
@@ -131,8 +143,11 @@ public final class BlueprintScreen extends Screen {
     private ShapePlan plan = new ShapePlan();
     private WandSelection selection = new WandSelection();
     private MachineSettings machine = new MachineSettings();
+    private PredicateRules limits = new PredicateRules();
 
     private boolean machinePage = false;
+    private boolean rulesPage = false;
+    private int rulesScroll = 0;
     private final List<Control> controls = new ArrayList<>();
     private final Map<Integer, Long> flashes = new HashMap<>();
     private Control dragging;
@@ -208,6 +223,7 @@ public final class BlueprintScreen extends Screen {
         plan = ShapePlan.read(stack);
         selection = WandSelection.read(stack);
         machine = MachineSettings.read(stack);
+        limits = PredicateRules.read(stack);
         return true;
     }
 
@@ -251,6 +267,8 @@ public final class BlueprintScreen extends Screen {
             paintBuild(g, font, mx, my);
         } else if (machinePage) {
             paintMachine(g, font, mx, my);
+        } else if (rulesPage) {
+            paintRules(g, font, mx, my);
         } else {
             paintExport(g, font, mx, my);
         }
@@ -400,6 +418,7 @@ public final class BlueprintScreen extends Screen {
         }
         ry += chip(g, font, X_MACHINE_PAGE, "MACHINE DEFINITION >", rx, ry, rw, o.style() == KubeJsExport.STYLE_MACHINE,
                 mx, my, true) + 3;
+        ry += chip(g, font, X_RULES_PAGE, "LIMITS PER BLOCK >", rx, ry, rw, !limits.rules.isEmpty(), mx, my, true) + 3;
         ry += chip(g, font, X_OPEN_FOLDER, "OPEN EXPORTS FOLDER", rx, ry, rw, false, mx, my, true) + 8;
 
         // a pattern from the clipboard, shown as a hologram where the wand is aimed
@@ -541,6 +560,172 @@ public final class BlueprintScreen extends Screen {
             cachedFindings = net.phoenixvine.blueprint.common.export.ExportCheck.check(level, selection, machine);
         }
         return cachedFindings;
+    }
+
+    // ------------------------------------------------------------------ limits per kind of block
+
+    /** One kind of predicate in the selection: its key (see {@code KubeJsExport.keyFor}), what to show, and how many. */
+    private record RuleRow(String key, String label, int count) {}
+
+    private List<RuleRow> cachedRows = List.of();
+    private long rowsAt = 0;
+
+    /** The kinds of predicate the selection will be written as, most common first; worked out twice a second at most. */
+    private List<RuleRow> ruleRows() {
+        long now = System.currentTimeMillis();
+        var level = Minecraft.getInstance().level;
+        if (level == null || now - rowsAt < 500) return cachedRows;
+        rowsAt = now;
+
+        String controllerBlock = null;
+        for (var s : selection.structures()) {
+            if (s.controller != null && !level.getBlockState(s.controller).isAir()) {
+                controllerBlock = BuiltInRegistries.BLOCK.getKey(level.getBlockState(s.controller).getBlock()).toString();
+                break;
+            }
+        }
+        String appearance = selection.options.style() == KubeJsExport.STYLE_MACHINE ?
+                machine.effective(controllerBlock).appearanceBlock : null;
+        if (appearance != null && appearance.isEmpty()) appearance = null;
+
+        Map<String, Integer> counts = new HashMap<>();
+        int budget = ExportCheck.SCAN_LIMIT;
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (var s : selection.structures()) {
+            if (s.corner1 == null || s.corner2 == null) continue;
+            int x0 = Math.min(s.corner1.getX(), s.corner2.getX()), x1 = Math.max(s.corner1.getX(), s.corner2.getX());
+            int y0 = Math.min(s.corner1.getY(), s.corner2.getY()), y1 = Math.max(s.corner1.getY(), s.corner2.getY());
+            int z0 = Math.min(s.corner1.getZ(), s.corner2.getZ()), z1 = Math.max(s.corner1.getZ(), s.corner2.getZ());
+            if ((long) (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > budget) continue;
+            budget -= (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
+            for (int x = x0; x <= x1; x++) {
+                for (int y = y0; y <= y1; y++) {
+                    for (int z = z0; z <= z1; z++) {
+                        if (s.controller != null && s.controller.getX() == x && s.controller.getY() == y &&
+                                s.controller.getZ() == z) {
+                            continue;
+                        }
+                        String id = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos.set(x, y, z)).getBlock())
+                                .toString();
+                        String key = KubeJsExport.keyFor(id, selection.options, appearance);
+                        if (key != null && !key.equals("air")) counts.merge(key, 1, Integer::sum);
+                    }
+                }
+            }
+        }
+        List<RuleRow> rows = new ArrayList<>();
+        for (var e : counts.entrySet()) {
+            String key = e.getKey();
+            String label = key.equals("appearance") ? "Casing (the appearance block)" :
+                    key.startsWith("abilities:") ? "Hatches: " + key.substring("abilities:".length()) :
+                            key.substring("block:".length());
+            rows.add(new RuleRow(key, label, e.getValue()));
+        }
+        rows.sort((a, b) -> b.count() != a.count() ? Integer.compare(b.count(), a.count()) :
+                a.label().compareTo(b.label()));
+        cachedRows = rows;
+        return rows;
+    }
+
+    private static final int RULES_TOP = 62;
+    private static final int RULE_ROW = 15;
+
+    private int visibleRuleRows() {
+        return (H - 36 - RULES_TOP) / RULE_ROW;
+    }
+
+    private static PredicateRules.Rule defaultRule(String key) {
+        return key.equals("appearance") ? PredicateRules.Rule.CASING : PredicateRules.Rule.PLAIN;
+    }
+
+    private static String modeName(int mode) {
+        return switch (mode) {
+            case PredicateRules.MIN -> "at least";
+            case PredicateRules.MAX -> "at most";
+            case PredicateRules.EXACT -> "exactly";
+            default -> "any number";
+        };
+    }
+
+    /** The limits page: how many of each kind of block the machine needs, and where hatches may stand in. */
+    private void paintRules(GuiGraphics g, Font font, int mx, int my) {
+        chip(g, font, R_BACK, "< BACK", 10, 25, 50, false, mx, my, false);
+        g.drawString(font, "LIMITS PER BLOCK", 66, 28, HudModel.DIM, false);
+        chip(g, font, R_RESET_ALL, "RESET ALL", W - 10 - 64, 43, 64, false, mx, my, false);
+        g.drawString(font, "How many of each the machine needs. Written on the predicate when you copy.", 10, 46,
+                HudModel.DIM, false);
+
+        List<RuleRow> rows = ruleRows();
+        int visible = visibleRuleRows();
+        rulesScroll = Mth.clamp(rulesScroll, 0, Math.max(0, rows.size() - visible));
+
+        g.drawString(font, "BLOCK", 10, RULES_TOP - 11, HudModel.DIM, false);
+        g.drawString(font, "IN IT", 126, RULES_TOP - 11, HudModel.DIM, false);
+        if (rows.isEmpty()) {
+            g.drawString(font, "Select a multiblock on the export page first.", 10, RULES_TOP + 4, HudModel.GOLD, false);
+        }
+        for (int i = 0; i < visible; i++) {
+            int index = rulesScroll + i;
+            if (index >= rows.size()) break;
+            RuleRow row = rows.get(index);
+            PredicateRules.Rule rule = limits.get(row.key(), defaultRule(row.key()));
+            int y = RULES_TOP + i * RULE_ROW;
+            int base = R_ROWS + index * 8;
+
+            String label = font.plainSubstrByWidth(row.label(), 112);
+            g.drawString(font, label, 10, y + 2, limits.rules.containsKey(row.key()) ? HudModel.WHITE : HudModel.DIM,
+                    false);
+            if (isOver(mx, my, 10, y, 112, 12) && !label.equals(row.label())) tooltip = row.label();
+            g.drawString(font, "x" + row.count(), 126, y + 2, T.accent(), false);
+
+            chip(g, font, base + ROW_MODE, modeName(rule.mode()), 158, y, 54, rule.mode() != PredicateRules.NONE, mx, my,
+                    false);
+            if (rule.mode() != PredicateRules.NONE) {
+                chip(g, font, base + ROW_MINUS, "-", 216, y, 14, false, mx, my, false);
+                String count = String.valueOf(rule.count());
+                g.drawString(font, count, 230 + (22 - font.width(count)) / 2, y + 2, HudModel.WHITE, false);
+                chip(g, font, base + ROW_PLUS, "+", 252, y, 14, false, mx, my, false);
+            }
+            if (!row.key().startsWith("abilities:")) {
+                chip(g, font, base + ROW_HATCHES, "HATCHES", 272, y, 52, rule.hatches(), mx, my, false);
+                chip(g, font, base + ROW_MAINTENANCE, "MAINT.", 328, y, 42, rule.maintenance(), mx, my, false);
+            }
+        }
+        if (rows.size() > visible) {
+            g.drawString(font, (rulesScroll + 1) + "-" + Math.min(rows.size(), rulesScroll + visible) + " of " +
+                    rows.size() + " (scroll)", W - 10 - 110, RULES_TOP - 11, HudModel.DIM, false);
+        }
+        footer(g, font, 10, "HATCHES lets the recipe types' hatches stand in for the block; MAINT. lets one maintenance hatch.");
+    }
+
+    /** A click on one button of a row of the limits page. */
+    private void pressRule(int id) {
+        int index = (id - R_ROWS) / 8;
+        int button = (id - R_ROWS) % 8;
+        List<RuleRow> rows = cachedRows;
+        if (index < 0 || index >= rows.size()) return;
+        RuleRow row = rows.get(index);
+        PredicateRules.Rule rule = limits.get(row.key(), defaultRule(row.key()));
+        int step = hasShiftDown() ? 5 : 1;
+        switch (button) {
+            case ROW_MODE -> {
+                int next = (rule.mode() + 1) % 4;
+                WandEditor.rule(row.key(), PredicateRules.FIELD_MODE, next);
+                if (next != PredicateRules.NONE && rule.count() < 1) WandEditor.rule(row.key(), PredicateRules.FIELD_COUNT, 1);
+                status(row.label() + ": " + modeName(next), T.accent());
+            }
+            case ROW_MINUS -> WandEditor.rule(row.key(), PredicateRules.FIELD_COUNT, Math.max(1, rule.count() - step));
+            case ROW_PLUS -> WandEditor.rule(row.key(), PredicateRules.FIELD_COUNT, rule.count() + step);
+            case ROW_HATCHES -> {
+                WandEditor.rule(row.key(), PredicateRules.FIELD_HATCHES, 0);
+                status(row.label() + ": hatches " + (rule.hatches() ? "not allowed" : "allowed") + " in its place", T.accent());
+            }
+            case ROW_MAINTENANCE -> {
+                WandEditor.rule(row.key(), PredicateRules.FIELD_MAINTENANCE, 0);
+                status(row.label() + ": a maintenance hatch " + (rule.maintenance() ? "not allowed" : "allowed"), T.accent());
+            }
+            default -> {}
+        }
     }
 
     private int listRow(GuiGraphics g, Font font, List<String> values, int y, int x, int vw, int addId, int clearId,
@@ -686,6 +871,10 @@ public final class BlueprintScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         double mx = localX(mouseX);
         double my = localY(mouseY);
+        if (rulesPage && selection.exportMode && my >= RULES_TOP - 11 && my < H - 36) {
+            rulesScroll = Math.max(0, rulesScroll - (int) Math.signum(scrollY) * 3);
+            return true;
+        }
         for (Control c : controls) {
             if (!c.contains(mx, my)) continue;
             int direction = scrollY > 0 ? 1 : -1;
@@ -801,6 +990,10 @@ public final class BlueprintScreen extends Screen {
     }
 
     private void press(int id) {
+        if (id >= R_ROWS) {
+            pressRule(id);
+            return;
+        }
         ShapeSpec spec = plan.current();
         if (id >= SHAPE && id < SHAPE + ShapeKind.values().length) {
             WandEditor.setKind(id - SHAPE);
@@ -835,6 +1028,17 @@ public final class BlueprintScreen extends Screen {
                 case X_ADD_STRUCTURE -> WandEditor.export(ShapeExportActions.ADD_STRUCTURE);
                 case X_REMOVE_STRUCTURE -> WandEditor.export(ShapeExportActions.REMOVE_STRUCTURE);
                 case X_MACHINE_PAGE -> machinePage = true;
+                case X_RULES_PAGE -> {
+                    rulesPage = true;
+                    rulesScroll = 0;
+                }
+                case R_BACK -> rulesPage = false;
+                case R_RESET_ALL -> {
+                    for (String key : new ArrayList<>(limits.rules.keySet())) {
+                        WandEditor.rule(key, PredicateRules.FIELD_RESET, 0);
+                    }
+                    status("All limits reset", T.accent());
+                }
                 case X_AUTO_SELECT -> WandEditor.export(ShapeExportActions.AUTO_SELECT);
                 case X_OPEN_FOLDER -> ShapeExportClient.openExportsFolder();
                 case X_IMPORT -> status(ImportHologram.importClipboard(), T.accent());
