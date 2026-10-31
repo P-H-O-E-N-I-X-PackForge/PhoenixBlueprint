@@ -11,11 +11,16 @@ public enum ShapeKind {
 
     RING("Ring", true, p("Radius", 8, 2, 64), p("Tube", 1, 1, 12), null, null),
     DISC("Disc", false, p("Outer radius", 8, 1, 64), p("Inner radius", 0, 0, 63), p("Height", 1, 1, 64), null),
+    HALF_DISC("Half disc", false, p("Outer radius", 8, 1, 64), p("Inner radius", 0, 0, 63), p("Height", 1, 1, 64), null),
     SPHERE("Sphere", false, p("Radius", 8, 1, 64), null, null, null),
     ELLIPSOID("Ellipsoid", false, p("X radius", 8, 1, 64), p("Y radius", 5, 1, 64), p("Z radius", 8, 1, 64), null),
     CYLINDER("Cylinder", false, p("Radius", 6, 1, 64), p("Length", 13, 1, 128), null, null),
     CONE("Cone", false, p("Base radius", 6, 1, 64), p("Height", 13, 1, 128), null, null),
+    FRUSTUM("Frustum", false, p("Bottom radius", 8, 0, 64), p("Top radius", 4, 0, 64), p("Height", 13, 1, 128), null),
+    HYPERBOLOID("Hyperboloid", false, p("Waist radius", 6, 1, 64), p("End radius", 10, 1, 64), p("Height", 20, 1, 128),
+            null),
     PYRAMID("Pyramid", false, p("Half-size", 6, 1, 64), p("Height", 9, 1, 128), null, null),
+    PRISM("Prism", false, p("Radius", 6, 1, 64), p("Sides", 6, 3, 16), p("Height", 9, 1, 128), null),
     DOME("Dome", false, p("Radius", 8, 1, 64), null, null, null),
     CAPSULE("Capsule", false, p("Radius", 4, 1, 32), p("Length", 13, 1, 128), null, null),
     BOX("Box", false, p("X half-size", 4, 0, 64), p("Y half-size", 4, 0, 64), p("Z half-size", 4, 0, 64), null),
@@ -27,7 +32,10 @@ public enum ShapeKind {
     STAR_RING("Star ring", true, p("Radius", 10, 2, 64), p("Tube", 1, 1, 12), p("Points", 5, 3, 16),
             p("Star (0 or 1)", 1, 0, 1)),
     LEMNISCATE("Infinity", true, p("Size", 10, 2, 64), p("Tube", 1, 1, 12), null, null),
-    ARCH("Arch", true, p("Radius", 8, 2, 64), p("Tube", 1, 1, 12), p("Depth", 1, 1, 64), null);
+    ARCH("Arch", true, p("Radius", 8, 2, 64), p("Tube", 1, 1, 12), p("Depth", 1, 1, 64), null),
+    SEMICIRCLE("Semicircle", true, p("Radius", 10, 2, 64), p("Tube", 1, 1, 12), p("Sweep", 180, 30, 360), null),
+    POLYGON_RING("Polygon ring", true, p("Radius", 10, 2, 64), p("Tube", 1, 1, 12), p("Sides", 8, 3, 16), null),
+    LINE("Line", true, p("Length", 16, 1, 128), p("Tube", 1, 1, 12), p("Bend", 0, -32, 32), null);
 
     /** One size of a shape: its name, default, and limits. */
     public record Param(String label, int def, int min, int max) {}

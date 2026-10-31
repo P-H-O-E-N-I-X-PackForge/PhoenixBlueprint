@@ -64,6 +64,8 @@ public final class BlueprintScreen extends Screen {
     private static final int OFFSET_X = 14;
     private static final int OFFSET_Y = 15;
     private static final int OFFSET_Z = 16;
+    private static final int ARRAY_COUNT = 17;
+    private static final int ARRAY_SPACING = 18;
     // chips
     private static final int SHAPE = 100; // + ordinal
     private static final int PART = 200; // + index
@@ -76,6 +78,19 @@ public final class BlueprintScreen extends Screen {
     private static final int CONNECTED = 243;
     private static final int PIN_PART = 260;
     private static final int PIN_ALL = 261;
+    private static final int ORIENT = 262;
+    private static final int LIBRARY = 263;
+    private static final int ARRAY_MODE = 264;
+    private static final int MIRROR_X = 265;
+    private static final int MIRROR_Y = 266;
+    private static final int MIRROR_Z = 267;
+    private static final int PART_BLOCK = 268;
+    private static final int SEND_EXPORT = 269;
+
+    // the shape list: a window of this many rows onto all the shapes, scrolled with the wheel or the bar beside it
+    private static final int SHAPE_TOP = 55;
+    private static final int SHAPE_ROWS = 4;
+    private static final int SHAPE_BAR_X = 226;
     private static final int UNDO = 250;
     private static final int RESET = 251;
     private static final int MODE_BUILD = 270;
@@ -154,6 +169,11 @@ public final class BlueprintScreen extends Screen {
     private final List<Control> controls = new ArrayList<>();
     private final Map<Integer, Long> flashes = new HashMap<>();
     private Control dragging;
+    private int shapeScroll = 0;
+    private int shapeMaxScroll = 0;
+    private int shapeBarThumb = 8;
+    private boolean shapeBarDrag = false;
+    private ShapeKind shownKind;
     private int lastSent = Integer.MIN_VALUE;
 
     private String status = "";
@@ -311,15 +331,37 @@ public final class BlueprintScreen extends Screen {
         chip(g, font, ADD_PART, "+", x + 4, 25, 18, false, mx, my, false);
         chip(g, font, REMOVE_PART, "-", x + 26, 25, 18, false, mx, my, false);
 
-        // left column: the shape and its sizes
+        // left column: the shape and its sizes. The shapes are a list that scrolls, so more of them never cost room.
         int lx = 10;
         g.drawString(font, "SHAPE", lx, 44, HudModel.DIM, false);
         ShapeKind[] kinds = ShapeKind.values();
-        for (int i = 0; i < kinds.length; i++) {
-            chip(g, font, SHAPE + i, kinds[i].displayName(), lx + (i % 3) * 71, 55 + (i / 3) * 15, 69,
-                    kinds[i] == spec.kind, mx, my, false);
+        int rows = (kinds.length + 2) / 3;
+        shapeMaxScroll = Math.max(0, rows - SHAPE_ROWS);
+        if (spec.kind != shownKind) {
+            // bring the chosen shape into view when it changes: another part, a preset, the first look
+            int row = spec.kind.ordinal() / 3;
+            if (row < shapeScroll) shapeScroll = row;
+            else if (row >= shapeScroll + SHAPE_ROWS) shapeScroll = row - SHAPE_ROWS + 1;
+            shownKind = spec.kind;
         }
-        int sy = 55 + ((kinds.length + 2) / 3) * 15 + 6;
+        shapeScroll = Mth.clamp(shapeScroll, 0, shapeMaxScroll);
+        for (int row = shapeScroll; row < Math.min(rows, shapeScroll + SHAPE_ROWS); row++) {
+            for (int col = 0; col < 3; col++) {
+                int i = row * 3 + col;
+                if (i >= kinds.length) break;
+                chip(g, font, SHAPE + i, kinds[i].displayName(), lx + col * 71, SHAPE_TOP + (row - shapeScroll) * 15, 69,
+                        kinds[i] == spec.kind, mx, my, false);
+            }
+        }
+        if (shapeMaxScroll > 0) {
+            int trackH = SHAPE_ROWS * 15 - 3;
+            shapeBarThumb = Math.max(8, trackH * SHAPE_ROWS / rows);
+            int thumbY = SHAPE_TOP + (trackH - shapeBarThumb) * shapeScroll / shapeMaxScroll;
+            g.fill(SHAPE_BAR_X, SHAPE_TOP, SHAPE_BAR_X + 4, SHAPE_TOP + trackH, T.dim());
+            g.fill(SHAPE_BAR_X, thumbY, SHAPE_BAR_X + 4, thumbY + shapeBarThumb,
+                    shapeBarDrag ? HudModel.WHITE : T.accent());
+        }
+        int sy = SHAPE_TOP + SHAPE_ROWS * 15 + 6;
         g.drawString(font, "SIZE", lx, sy, HudModel.DIM, false);
         for (int i = 0; i < 4; i++) {
             ShapeKind.Param param = spec.kind.param(i);
@@ -362,15 +404,42 @@ public final class BlueprintScreen extends Screen {
         if (ShapeHologramInfo.pinnedElsewhere > 0) {
             pinNote = ShapeHologramInfo.pinnedElsewhere + " pinned in another dimension";
         }
-        int ny = 242;
-        for (var line : font.split(Component.literal(pinNote), 212)) {
-            g.drawString(font, line, lx, ny, spec.locked ? T.accent() : HudModel.DIM, false);
-            ny += 10;
+        // the block this part is built from (shift-click: back to the block in your other hand), then where it is pinned
+        String blockName = spec.block.isEmpty() ? "IN YOUR HAND" :
+                spec.block.startsWith("minecraft:") ? spec.block.substring("minecraft:".length()) : spec.block;
+        chip(g, font, PART_BLOCK, "BLOCK: " + blockName, lx, hy + 15, 212, !spec.block.isEmpty(), mx, my, false);
+        g.drawString(font, font.plainSubstrByWidth(pinNote, 212), lx, hy + 30, spec.locked ? T.accent() : HudModel.DIM,
+                false);
+
+        // repeats and mirror images of this part
+        int ay = 238;
+        g.drawString(font, "REPEAT", lx, ay, HudModel.DIM, false);
+        String[] arrayNames = { "OFF", "LINE X", "LINE Y", "LINE Z", "RING" };
+        chip(g, font, ARRAY_MODE, arrayNames[Math.floorMod(spec.arrayMode, arrayNames.length)], lx, ay + 11, 64,
+                spec.arrayMode != ShapeSpec.ARRAY_OFF, mx, my, false);
+        if (spec.arrayMode != ShapeSpec.ARRAY_OFF) {
+            slider(g, font, ARRAY_COUNT, "Copies", lx + 70, ay + 11, 142, 40, spec.arrayCount, 2, ShapeSpec.MAX_ARRAY, 1,
+                    mx, my);
         }
+        if (spec.arrayMode >= ShapeSpec.ARRAY_X && spec.arrayMode <= ShapeSpec.ARRAY_Z) {
+            slider(g, font, ARRAY_SPACING, "Spacing", lx, ay + 26, 212, 78, spec.arraySpacing, 1, 64, 1, mx, my);
+        }
+        chip(g, font, MIRROR_X, "MIRROR X", lx, ay + 41, 69, spec.mirrorX, mx, my, false);
+        chip(g, font, MIRROR_Y, "MIRROR Y", lx + 71, ay + 41, 69, spec.mirrorY, mx, my, false);
+        chip(g, font, MIRROR_Z, "MIRROR Z", lx + 142, ay + 41, 69, spec.mirrorZ, mx, my, false);
+
+        String[] orientNames = { "OFF", "OUT", "IN" };
+        chip(g, font, ORIENT, "TURN BLOCKS: " + orientNames[Math.floorMod(plan.orient, 3)], rx, 262, rw,
+                plan.orient != ShapePlan.ORIENT_OFF, mx, my, false);
+        if (isOver(mx, my, rx, 262, rw, 12)) {
+            tooltip = "Turns logs, stairs, slabs and other directional blocks to follow the shape";
+        }
+        chip(g, font, SEND_EXPORT, "SEND TO EXPORT >", rx, 277, rw, false, mx, my, true);
 
         chip(g, font, UNDO, "UNDO", 10, H - 25, 44, false, mx, my, false);
         chip(g, font, RESET, "RESET", 58, H - 25, 44, false, mx, my, false);
-        footer(g, font, 112, "Builds with the block in your other hand. Right-click builds, left-click undoes.");
+        chip(g, font, LIBRARY, "LIBRARY", 106, H - 25, 54, false, mx, my, false);
+        footer(g, font, 168, "Builds with the block in your other hand. Right-click builds, left-click undoes.");
     }
 
     private void paintExport(GuiGraphics g, Font font, int mx, int my) {
@@ -858,6 +927,12 @@ public final class BlueprintScreen extends Screen {
         if (button == 0) {
             double mx = localX(mouseX);
             double my = localY(mouseY);
+            if (!selection.exportMode && shapeMaxScroll > 0 && mx >= SHAPE_BAR_X - 3 && mx < SHAPE_BAR_X + 7 &&
+                    my >= SHAPE_TOP && my < SHAPE_TOP + SHAPE_ROWS * 15 - 3) {
+                shapeBarDrag = true;
+                scrollShapesTo(my);
+                return true;
+            }
             for (Control c : controls) {
                 if (!c.contains(mx, my)) continue;
                 if (c.kind() == Kind.SLIDER) {
@@ -875,6 +950,10 @@ public final class BlueprintScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (shapeBarDrag) {
+            scrollShapesTo(localY(mouseY));
+            return true;
+        }
         if (dragging != null) {
             setFromMouse(dragging, localX(mouseX));
             return true;
@@ -885,6 +964,7 @@ public final class BlueprintScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         dragging = null;
+        shapeBarDrag = false;
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -896,6 +976,11 @@ public final class BlueprintScreen extends Screen {
             rulesScroll = Math.max(0, rulesScroll - (int) Math.signum(scrollY) * 3);
             return true;
         }
+        if (!selection.exportMode && shapeMaxScroll > 0 && mx >= 10 && mx < SHAPE_BAR_X + 7 && my >= SHAPE_TOP &&
+                my < SHAPE_TOP + SHAPE_ROWS * 15) {
+            shapeScroll = Mth.clamp(shapeScroll - (int) Math.signum(scrollY), 0, shapeMaxScroll);
+            return true;
+        }
         for (Control c : controls) {
             if (!c.contains(mx, my)) continue;
             int direction = scrollY > 0 ? 1 : -1;
@@ -904,12 +989,15 @@ public final class BlueprintScreen extends Screen {
                 applySlider(c, Mth.clamp(current(c.id()) + direction * step, c.min(), c.max()));
                 return true;
             }
-            if (c.id() >= SHAPE && c.id() < SHAPE + ShapeKind.values().length) {
-                WandEditor.changeKind(-direction);
-                return true;
-            }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    /** Scrolls the shape list so the bar's thumb is centred on the mouse. */
+    private void scrollShapesTo(double my) {
+        int trackH = SHAPE_ROWS * 15 - 3;
+        double t = Mth.clamp((my - SHAPE_TOP - shapeBarThumb / 2.0) / Math.max(1, trackH - shapeBarThumb), 0.0, 1.0);
+        shapeScroll = (int) Math.round(t * shapeMaxScroll);
     }
 
     private void setFromMouse(Control c, double mx) {
@@ -933,6 +1021,8 @@ public final class BlueprintScreen extends Screen {
             case OFFSET_X -> spec.dx;
             case OFFSET_Y -> spec.dy;
             case OFFSET_Z -> spec.dz;
+            case ARRAY_COUNT -> spec.arrayCount;
+            case ARRAY_SPACING -> spec.arraySpacing;
             default -> 0;
         };
     }
@@ -948,6 +1038,8 @@ public final class BlueprintScreen extends Screen {
             case OFFSET_X -> WandEditor.setField(WandEdits.FIELD_DX, value);
             case OFFSET_Y -> WandEditor.setField(WandEdits.FIELD_DY, value);
             case OFFSET_Z -> WandEditor.setField(WandEdits.FIELD_DZ, value);
+            case ARRAY_COUNT -> WandEditor.setField(WandEdits.FIELD_ARRAY_COUNT, value);
+            case ARRAY_SPACING -> WandEditor.setField(WandEdits.FIELD_ARRAY_SPACING, value);
             default -> {}
         }
         if (c.label() != null) status(c.label() + ": " + value, T.accent());
@@ -997,6 +1089,17 @@ public final class BlueprintScreen extends Screen {
             case PIN_PART -> spec.locked ? "Part pinned at " + spec.pinX + " " + spec.pinY + " " + spec.pinZ :
                     "Part follows the aim";
             case PIN_ALL -> plan.parts.stream().allMatch(part -> part.locked) ? "All parts pinned" : "Parts follow the aim";
+            case PART_BLOCK -> spec.block.isEmpty() ? "This part builds from the block in your other hand: click to pick its own" :
+                    spec.block + " (shift-click to use the block in your other hand)";
+            case SEND_EXPORT -> "Selects the shape you just built and switches to export mode";
+            case ARRAY_MODE -> switch (spec.arrayMode) {
+                case ShapeSpec.ARRAY_OFF -> "No repeats: click to repeat this part";
+                case ShapeSpec.ARRAY_RING -> "Repeats around the anchor's vertical axis";
+                default -> "Repeats in a line";
+            };
+            case MIRROR_X, MIRROR_Y, MIRROR_Z -> "Adds a mirror image of this part across the plane through the anchor";
+            case ORIENT -> "Turn blocks: " + (plan.orient == ShapePlan.ORIENT_OFF ? "off, blocks keep their default direction" :
+                    plan.orient == ShapePlan.ORIENT_OUT ? "facing away from the surface" : "facing toward the surface");
             case UNDO -> "Undoing the last build...";
             case RESET -> "Reset to one default ring";
             case ADD_PART -> "Part " + (plan.selected + 1) + " added";
@@ -1039,6 +1142,17 @@ public final class BlueprintScreen extends Screen {
                 case SIT_ON_BASE -> WandEditor.setFlag(WandEdits.FLAG_SIT_ON_BASE, !plan.sitOnBase);
                 case OVERWRITE -> WandEditor.setFlag(WandEdits.FLAG_OVERWRITE, !plan.overwrite);
                 case CONNECTED -> WandEditor.setFlag(WandEdits.FLAG_CONNECTED, !plan.connected);
+                case PART_BLOCK -> {
+                    if (hasShiftDown()) WandEditor.partBlock("");
+                    else WandPickers.pickPartBlock(this);
+                }
+                case SEND_EXPORT -> WandEditor.export(ShapeExportActions.SEND_TO_EXPORT);
+                case ARRAY_MODE -> WandEditor.setField(WandEdits.FIELD_ARRAY_MODE, spec.arrayMode + 1);
+                case MIRROR_X -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_X, !spec.mirrorX);
+                case MIRROR_Y -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_Y, !spec.mirrorY);
+                case MIRROR_Z -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_Z, !spec.mirrorZ);
+                case ORIENT -> WandEditor.orient(Math.floorMod(plan.orient + 1, 3));
+                case LIBRARY -> Minecraft.getInstance().setScreen(new PlanLibraryScreen(this));
                 case UNDO -> WandEditor.send(WandEdits.UNDO);
                 case RESET -> WandEditor.send(WandEdits.RESET);
                 case MODE_BUILD -> WandEditor.export(ShapeExportActions.SET_BUILD);

@@ -37,11 +37,18 @@ public final class WandEdits {
     public static final int MACHINE = 14;
     /** A limit on a kind of block: a predicate key, a field and a value. */
     public static final int RULE = 15;
+    /** How directional blocks are turned to follow the shape: see {@link ShapePlan#orient}. */
+    public static final int ORIENT = 16;
+    /** The block the selected part is built from (an id, or empty for the block in the other hand). */
+    public static final int BLOCK = 17;
 
     public static final int FLAG_HOLLOW = 0;
     public static final int FLAG_SIT_ON_BASE = 1;
     public static final int FLAG_OVERWRITE = 2;
     public static final int FLAG_CONNECTED = 3;
+    public static final int FLAG_MIRROR_X = 4;
+    public static final int FLAG_MIRROR_Y = 5;
+    public static final int FLAG_MIRROR_Z = 6;
 
     public static final int FIELD_WALL = 0;
     public static final int FIELD_YAW = 1;
@@ -50,6 +57,9 @@ public final class WandEdits {
     public static final int FIELD_DX = 4;
     public static final int FIELD_DY = 5;
     public static final int FIELD_DZ = 6;
+    public static final int FIELD_ARRAY_MODE = 7;
+    public static final int FIELD_ARRAY_COUNT = 8;
+    public static final int FIELD_ARRAY_SPACING = 9;
 
     private WandEdits() {}
 
@@ -129,6 +139,11 @@ public final class WandEdits {
                 int ordinal = buf.readVarInt();
                 if (ordinal >= 0 && ordinal < ShapeKind.values().length) spec.setKind(ShapeKind.values()[ordinal]);
             }
+            case ORIENT -> plan.orient = Math.floorMod(buf.readVarInt(), 3);
+            case BLOCK -> {
+                String id = buf.readUtf(128);
+                spec.block = PartBlocks.lookup(id) != null ? id : "";
+            }
             case SIZE -> spec.setSize(buf.readVarInt(), buf.readInt());
             case FLAG -> {
                 int flag = buf.readVarInt();
@@ -138,6 +153,9 @@ public final class WandEdits {
                     case FLAG_SIT_ON_BASE -> plan.sitOnBase = value;
                     case FLAG_OVERWRITE -> plan.overwrite = value;
                     case FLAG_CONNECTED -> plan.connected = value;
+                    case FLAG_MIRROR_X -> spec.mirrorX = value;
+                    case FLAG_MIRROR_Y -> spec.mirrorY = value;
+                    case FLAG_MIRROR_Z -> spec.mirrorZ = value;
                     default -> {}
                 }
             }
@@ -152,6 +170,9 @@ public final class WandEdits {
                     case FIELD_DX -> spec.dx = Math.max(-128, Math.min(128, value));
                     case FIELD_DY -> spec.dy = Math.max(-128, Math.min(128, value));
                     case FIELD_DZ -> spec.dz = Math.max(-128, Math.min(128, value));
+                    case FIELD_ARRAY_MODE -> spec.arrayMode = Math.floorMod(value, ShapeSpec.ARRAY_MODES);
+                    case FIELD_ARRAY_COUNT -> spec.arrayCount = Math.max(2, Math.min(ShapeSpec.MAX_ARRAY, value));
+                    case FIELD_ARRAY_SPACING -> spec.arraySpacing = Math.max(1, Math.min(64, value));
                     default -> {}
                 }
             }

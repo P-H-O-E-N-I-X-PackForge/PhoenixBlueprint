@@ -29,12 +29,45 @@ public final class ShapeGenerator {
     /** Cells further than this from the centre are never tested (keeps a huge shape from freezing the game). */
     private static final int MAX_EXTENT = 110;
 
-    public record Result(LongSet cells, boolean truncated) {}
+    /**
+     * @param owners which part (its index in the plan) each cell came from; empty unless some part has a block of its own.
+     *               A block added to join two others takes the part of a neighbour.
+     * @param shiftY how far everything was moved up to sit on its base (0 when the plan does not sit on its base)
+     */
+    public record Result(LongSet cells, boolean truncated, it.unimi.dsi.fastutil.longs.Long2IntMap owners, int shiftY) {
+
+        public Result(LongSet cells, boolean truncated) {
+            this(cells, truncated, new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap(), 0);
+        }
+
+        public Result(LongSet cells, boolean truncated, it.unimi.dsi.fastutil.longs.Long2IntMap owners) {
+            this(cells, truncated, owners, 0);
+        }
+    }
 
     private ShapeGenerator() {}
 
     /** Cells of blocks in the world, from a plan whose parts may be pinned. */
-    public record WorldResult(LongSet cells, boolean truncated, int skippedParts) {}
+    public record WorldResult(LongSet cells, boolean truncated, int skippedParts,
+                              it.unimi.dsi.fastutil.longs.Long2IntMap owners,
+                              it.unimi.dsi.fastutil.longs.Long2ByteMap orientation) {
+
+        public WorldResult(LongSet cells, boolean truncated, int skippedParts) {
+            this(cells, truncated, skippedParts, new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap());
+        }
+
+        public WorldResult(LongSet cells, boolean truncated, int skippedParts,
+                           it.unimi.dsi.fastutil.longs.Long2IntMap owners) {
+            this(cells, truncated, skippedParts, owners, noOrientation());
+        }
+    }
+
+    /** An orientation map with nothing in it: every block is placed as it is. */
+    public static it.unimi.dsi.fastutil.longs.Long2ByteMap noOrientation() {
+        it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap none = new it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap();
+        none.defaultReturnValue(BlockOrienter.NONE);
+        return none;
+    }
 
     /** Every part of the plan, relative to the anchor, as if none were pinned. */
     public static Result generate(ShapePlan plan) {
@@ -58,22 +91,44 @@ public final class ShapeGenerator {
 
     /** The pinned parts in the world (those pinned in another dimension are skipped and counted). */
     public static WorldResult pinnedParts(ShapePlan plan, String dimension) {
+        return pinnedParts(plan, dimension, plan.orient != ShapePlan.ORIENT_OFF);
+    }
+
+    private static WorldResult pinnedParts(ShapePlan plan, String dimension, boolean withOrientation) {
         LongOpenHashSet out = new LongOpenHashSet();
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap owners = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+        owners.defaultReturnValue(-1);
         boolean truncated = false;
         int skipped = 0;
-        for (ShapeSpec spec : plan.parts) {
+        boolean own = plan.anyBlock();
+        // a part repeated or mirrored is several instances, each its own shape
+        List<ShapeSpec> instances = plan.instances();
+        List<String> blockIds = plan.blockIds();
+        for (int i = 0; i < instances.size(); i++) {
+            ShapeSpec spec = instances.get(i);
             if (!spec.locked) continue;
             if (!spec.pinDim.equals(dimension)) {
                 skipped++;
                 continue;
             }
-            Result part = relative(plan, s -> s == spec, false, false);
+            Result part = relativeOf(plan, List.of(spec), false, false);
             truncated |= part.truncated();
             addTranslated(out, part.cells(), spec.pinX, spec.pinY, spec.pinZ);
+            if (own) {
+                LongIterator cells = part.cells().iterator();
+                while (cells.hasNext()) {
+                    long cell = cells.nextLong();
+                    owners.put(BlockPos.asLong(BlockPos.getX(cell) + spec.pinX, BlockPos.getY(cell) + spec.pinY,
+                            BlockPos.getZ(cell) + spec.pinZ), blockIds.indexOf(spec.block));
+                }
+            }
             if (out.size() > MAX_CELLS) truncated = true;
         }
         if (plan.connected && !truncated) connectDiagonals(out);
-        return new WorldResult(out, truncated, skipped);
+        if (own) inheritOwners(out, owners);
+        it.unimi.dsi.fastutil.longs.Long2ByteMap orientation = withOrientation && !truncated ?
+                ShapeOrientation.compute(plan, s -> s.locked, BlockPos.ZERO, 0, dimension, out) : noOrientation();
+        return new WorldResult(out, truncated, skipped, owners, orientation);
     }
 
     /** The whole plan in the world: the free parts at the anchor, the pinned ones where they are pinned. */
@@ -83,12 +138,24 @@ public final class ShapeGenerator {
         addTranslated(out, free.cells(), anchor.getX(), anchor.getY(), anchor.getZ());
         boolean truncated = free.truncated();
 
-        WorldResult pinned = pinnedParts(plan, dimension);
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap owners = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+        owners.defaultReturnValue(-1);
+        for (var e : free.owners().long2IntEntrySet()) {
+            long cell = e.getLongKey();
+            owners.put(BlockPos.asLong(BlockPos.getX(cell) + anchor.getX(), BlockPos.getY(cell) + anchor.getY(),
+                    BlockPos.getZ(cell) + anchor.getZ()), e.getIntValue());
+        }
+
+        WorldResult pinned = pinnedParts(plan, dimension, false);
         // the pinned parts were joined among themselves; join everything once more below
         out.addAll(pinned.cells());
+        owners.putAll(pinned.owners());
         truncated |= pinned.truncated() || out.size() > MAX_CELLS;
         if (plan.connected && !truncated) connectDiagonals(out);
-        return new WorldResult(out, truncated, pinned.skippedParts());
+        if (plan.anyBlock()) inheritOwners(out, owners);
+        it.unimi.dsi.fastutil.longs.Long2ByteMap orientation = plan.orient != ShapePlan.ORIENT_OFF && !truncated ?
+                ShapeOrientation.compute(plan, s -> true, anchor, free.shiftY(), dimension, out) : noOrientation();
+        return new WorldResult(out, truncated, pinned.skippedParts(), owners, orientation);
     }
 
     private static void addTranslated(LongSet out, LongSet cells, int dx, int dy, int dz) {
@@ -101,10 +168,17 @@ public final class ShapeGenerator {
 
     private static Result relative(ShapePlan plan, java.util.function.Predicate<ShapeSpec> include, boolean sitOnBase,
                                    boolean connect) {
+        List<ShapeSpec> specs = new ArrayList<>();
+        for (ShapeSpec spec : plan.instances()) {
+            if (include.test(spec)) specs.add(spec);
+        }
+        return relativeOf(plan, specs, sitOnBase, connect);
+    }
+
+    private static Result relativeOf(ShapePlan plan, List<ShapeSpec> specs, boolean sitOnBase, boolean connect) {
         LongOpenHashSet out = new LongOpenHashSet();
         boolean truncated = false;
-        for (ShapeSpec spec : plan.parts) {
-            if (!include.test(spec)) continue;
+        for (ShapeSpec spec : specs) {
             addSpec(out, spec);
             if (out.size() > MAX_CELLS) {
                 truncated = true;
@@ -114,10 +188,27 @@ public final class ShapeGenerator {
 
         if (connect && !truncated) connectDiagonals(out);
 
+        // which part each block came from, when the parts are built from different blocks
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap owners = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+        owners.defaultReturnValue(-1);
+        if (plan.anyBlock() && !truncated) {
+            List<String> blockIds = plan.blockIds();
+            for (ShapeSpec spec : specs) {
+                LongOpenHashSet own = new LongOpenHashSet();
+                addSpec(own, spec);
+                int owner = blockIds.indexOf(spec.block);
+                LongIterator cells = own.iterator();
+                while (cells.hasNext()) owners.put(cells.nextLong(), owner);
+            }
+            inheritOwners(out, owners);
+        }
+
+        int shiftY = 0;
         if (sitOnBase && !out.isEmpty()) {
             int minY = Integer.MAX_VALUE;
             LongIterator it = out.iterator();
             while (it.hasNext()) minY = Math.min(minY, BlockPos.getY(it.nextLong()));
+            shiftY = -minY;
             LongOpenHashSet shifted = new LongOpenHashSet(out.size());
             it = out.iterator();
             while (it.hasNext()) {
@@ -125,14 +216,46 @@ public final class ShapeGenerator {
                 shifted.add(BlockPos.asLong(BlockPos.getX(cell), BlockPos.getY(cell) - minY, BlockPos.getZ(cell)));
             }
             out = shifted;
+            it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap moved = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+            moved.defaultReturnValue(-1);
+            for (var e : owners.long2IntEntrySet()) {
+                long cell = e.getLongKey();
+                moved.put(BlockPos.asLong(BlockPos.getX(cell), BlockPos.getY(cell) - minY, BlockPos.getZ(cell)),
+                        e.getIntValue());
+            }
+            owners = moved;
         }
-        return new Result(out, truncated);
+        return new Result(out, truncated, owners, shiftY);
     }
 
     /**
      * Joins blocks that only touch along an edge or at a corner by adding one between them, so a thin ring is a chain of
      * blocks that share faces (the way things connect in Minecraft) instead of a line of corners.
      */
+    /** Cells with no owner (the ones added to join others) take the owner of a block they touch. */
+    private static void inheritOwners(LongSet cells, it.unimi.dsi.fastutil.longs.Long2IntMap owners) {
+        if (owners.isEmpty()) return;
+        int[][] faces = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+        for (int pass = 0; pass < 3; pass++) {
+            it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap found = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+            LongIterator it = cells.iterator();
+            while (it.hasNext()) {
+                long cell = it.nextLong();
+                if (owners.containsKey(cell)) continue;
+                for (int[] f : faces) {
+                    long next = BlockPos.asLong(BlockPos.getX(cell) + f[0], BlockPos.getY(cell) + f[1],
+                            BlockPos.getZ(cell) + f[2]);
+                    if (owners.containsKey(next)) {
+                        found.put(cell, owners.get(next));
+                        break;
+                    }
+                }
+            }
+            if (found.isEmpty()) return;
+            owners.putAll(found);
+        }
+    }
+
     private static void connectDiagonals(LongSet cells) {
         for (int pass = 0; pass < 2; pass++) {
             LongOpenHashSet additions = new LongOpenHashSet();
@@ -212,13 +335,15 @@ public final class ShapeGenerator {
             case ELLIPSOID, BOX -> Math.sqrt((double) a * a + (double) b * b + (double) c * c);
             case CYLINDER, CONE, CAPSULE -> Math.hypot(a, b / 2.0) + (s.kind == ShapeKind.CAPSULE ? a : 0);
             case PYRAMID -> Math.hypot(a * 1.5, b / 2.0);
-            case DISC -> Math.hypot(a, c / 2.0);
+            case FRUSTUM, HYPERBOLOID -> Math.hypot(Math.max(a, b), c / 2.0);
+            case PRISM -> Math.hypot(a, c / 2.0);
+            case DISC, HALF_DISC -> Math.hypot(a, c / 2.0);
             default -> a;
         };
     }
 
     /** How far a point is from the surface of a solid shape: negative inside, positive outside (blocks, roughly). */
-    private static double signedDistance(ShapeSpec s, double x, double y, double z) {
+    static double signedDistance(ShapeSpec s, double x, double y, double z) {
         int a = s.size[0];
         int b = s.size[1];
         int c = s.size[2];
@@ -243,6 +368,29 @@ public final class ShapeGenerator {
                 double side = a * (1.0 - Math.max(0.0, Math.min(1.0, t)));
                 return Math.max(Math.max(Math.abs(x), Math.abs(z)) - side, Math.abs(y) - half);
             }
+            case FRUSTUM: {
+                double half = (c - 1) / 2.0;
+                double t = c > 1 ? (y + half) / (c - 1) : 0.0;
+                double radius = a + (b - a) * Math.max(0.0, Math.min(1.0, t));
+                return Math.max(Math.hypot(x, z) - radius, Math.abs(y) - half);
+            }
+            case HYPERBOLOID: {
+                // a cooling tower: the radius is a at the waist and b at both ends, along a hyperbola
+                double half = (c - 1) / 2.0;
+                double u = half > 0 ? Math.max(-1.0, Math.min(1.0, y / half)) : 0.0;
+                double radius = Math.sqrt(a * a + ((double) b * b - (double) a * a) * u * u);
+                return Math.max(Math.hypot(x, z) - radius, Math.abs(y) - half);
+            }
+            case PRISM: {
+                // a regular polygon with b sides and corner radius a, found by folding the point into its own side
+                double sector = Math.PI * 2 / b;
+                double angle = Math.atan2(z, x);
+                if (angle < 0) angle += Math.PI * 2;
+                double facing = (Math.floor(angle / sector) + 0.5) * sector;
+                double apothem = a * Math.cos(Math.PI / b);
+                double edge = x * Math.cos(facing) + z * Math.sin(facing) - apothem;
+                return Math.max(edge, Math.abs(y) - (c - 1) / 2.0);
+            }
             case DOME:
                 return Math.max(Math.sqrt(x * x + y * y + z * z) - a, -y);
             case CAPSULE: {
@@ -255,6 +403,11 @@ public final class ShapeGenerator {
             case DISC: {
                 double ro = Math.hypot(x, z);
                 return Math.max(Math.max(ro - a, b - ro), Math.abs(y) - (c - 1) / 2.0);
+            }
+            case HALF_DISC: {
+                // a disc cut along its diameter: the half on the +z side, the cut edge on the x axis
+                double ro = Math.hypot(x, z);
+                return Math.max(Math.max(Math.max(ro - a, b - ro), -z), Math.abs(y) - (c - 1) / 2.0);
             }
             default:
                 return Double.MAX_VALUE;
@@ -303,7 +456,7 @@ public final class ShapeGenerator {
     }
 
     /** Points along the shape's line, in the shape's own space, about a third of a block apart. */
-    private static List<Vector3d> curvePoints(ShapeSpec s) {
+    static List<Vector3d> curvePoints(ShapeSpec s) {
         double a = s.size[0];
         int c = s.size[2];
         int d = s.size[3];
@@ -340,6 +493,25 @@ public final class ShapeGenerator {
                 }
                 return polyline(vertices, true);
             }
+            case SEMICIRCLE: {
+                // an arc of the circle, sweep degrees wide, centred on the +x side (a half circle at 180)
+                double half = Math.toRadians(c) / 2.0;
+                return sample(t -> {
+                    double angle = (t * 2 - 1) * half;
+                    return new Vector3d(a * Math.cos(angle), 0, a * Math.sin(angle));
+                }, false);
+            }
+            case POLYGON_RING: {
+                List<Vector3d> corners = new ArrayList<>();
+                for (int i = 0; i < c; i++) {
+                    double angle = Math.PI * 2 * i / c;
+                    corners.add(new Vector3d(a * Math.cos(angle), 0, a * Math.sin(angle)));
+                }
+                return polyline(corners, true);
+            }
+            case LINE:
+                // along x, sagging by c blocks in the middle (a straight line when c is 0)
+                return sample(t -> new Vector3d(a * (t - 0.5), c * (1 - (2 * t - 1) * (2 * t - 1)), 0), false);
             case LEMNISCATE:
                 return sample(t -> {
                     double th = t * Math.PI * 2;

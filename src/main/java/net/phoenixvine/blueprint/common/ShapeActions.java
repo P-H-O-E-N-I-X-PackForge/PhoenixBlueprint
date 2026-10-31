@@ -11,6 +11,9 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 
 import it.unimi.dsi.fastutil.longs.LongIterator;
 
@@ -52,13 +55,17 @@ public final class ShapeActions {
             return;
         }
         BlockState state = blockFor(player, wandHand);
-        if (state == null) {
-            player.displayClientMessage(Component.literal("Hold the block to build with in your other hand.")
-                    .withStyle(ChatFormatting.RED), true);
-            return;
+        ShapePlan plan = ShapePlan.read(player.getItemInHand(wandHand));
+        // every part builds from its own block, else from the block in the other hand
+        BlockOrienter.Table[] tables = PartBlocks.tables(plan, state);
+        for (BlockOrienter.Table table : tables) {
+            if (table == null) {
+                player.displayClientMessage(Component.literal("Hold the block to build with in your other hand.")
+                        .withStyle(ChatFormatting.RED), true);
+                return;
+            }
         }
 
-        ShapePlan plan = ShapePlan.read(player.getItemInHand(wandHand));
         String dimension = player.level().dimension().location().toString();
         ShapeGenerator.WorldResult shape = ShapeGenerator.world(plan, anchor, dimension);
         if (shape.skippedParts() > 0) {
@@ -76,33 +83,97 @@ public final class ShapeActions {
         Map<Long, BlockState> before = new LinkedHashMap<>();
         int placed = 0;
         int skipped = 0;
+        int denied = 0;
 
+        // blocks with a direction (logs, stairs, slabs...) are turned to follow the shape
         LongIterator it = shape.cells().iterator();
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
         while (it.hasNext()) {
-            BlockPos pos = BlockPos.of(it.nextLong());
-            if (!level.isInWorldBounds(pos) || !level.hasChunkAt(pos)) {
-                skipped++;
-                continue;
+            long cell = it.nextLong();
+            BlockPos pos = BlockPos.of(cell);
+            minX = Math.min(minX, pos.getX());
+            minY = Math.min(minY, pos.getY());
+            minZ = Math.min(minZ, pos.getZ());
+            maxX = Math.max(maxX, pos.getX());
+            maxY = Math.max(maxY, pos.getY());
+            maxZ = Math.max(maxZ, pos.getZ());
+            BlockOrienter.Table table = PartBlocks.tableFor(tables, shape.owners().get(cell));
+            BlockState target = table.get(shape.orientation().get(cell));
+            switch (setGuarded(level, player, pos, target, plan.overwrite, before)) {
+                case PLACED -> placed++;
+                case DENIED -> denied++;
+                default -> skipped++;
             }
-            BlockState existing = level.getBlockState(pos);
-            boolean free = existing.isAir() || existing.canBeReplaced();
-            if ((!free && !plan.overwrite) || level.getBlockEntity(pos) != null || existing == state) {
-                skipped++;
-                continue;
-            }
-            before.put(pos.asLong(), existing);
-            level.setBlock(pos, state, 2);
-            placed++;
         }
 
-        if (!before.isEmpty()) {
-            Deque<Undo> history = HISTORY.computeIfAbsent(player.getUUID(), id -> new ArrayDeque<>());
-            history.addLast(new Undo(level.dimension(), before));
-            while (history.size() > UNDO_DEPTH) history.removeFirst();
+        remember(player, level, before);
+        if (minX != Integer.MAX_VALUE) {
+            // what the shape covers, whether or not every block of it was new: this is what export mode selects
+            LAST_BOUNDS.put(player.getUUID(), new Bounds(level.dimension(), new BlockPos(minX, minY, minZ),
+                    new BlockPos(maxX, maxY, maxZ)));
         }
-        player.displayClientMessage(Component.literal("Placed " + placed + " blocks" +
-                (skipped > 0 ? " (" + skipped + " skipped)" : "") + ". Left-click to undo.")
-                .withStyle(ChatFormatting.AQUA), true);
+        player.displayClientMessage(Component.literal(summary(placed, skipped, denied) + ". Left-click to undo.")
+                .withStyle(denied > 0 ? ChatFormatting.GOLD : ChatFormatting.AQUA), true);
+    }
+
+    /** The corners of the box a player's last build covered, and where. */
+    private record Bounds(ResourceKey<Level> dimension, BlockPos low, BlockPos high) {}
+
+    private static final Map<UUID, Bounds> LAST_BOUNDS = new HashMap<>();
+
+    private enum Outcome {
+        PLACED,
+        SKIPPED,
+        DENIED
+    }
+
+    /**
+     * Puts one block in the world, the way a player placing it would be checked: protection and claim mods can refuse it.
+     * Replacing a block that is not free (overwrite) is a break as well as a placement, so the break is asked about first;
+     * the placement is then announced the way a placed block is (set, then the event, and put back if a listener cancels
+     * it). When a block is placed, what was there is noted in {@code before} so it can be undone.
+     */
+    private static Outcome setGuarded(ServerLevel level, ServerPlayer player, BlockPos pos, BlockState state,
+                                      boolean overwrite, Map<Long, BlockState> before) {
+        if (!level.isInWorldBounds(pos) || !level.hasChunkAt(pos)) return Outcome.SKIPPED;
+        BlockState existing = level.getBlockState(pos);
+        boolean free = existing.isAir() || existing.canBeReplaced();
+        if ((!free && !overwrite) || level.getBlockEntity(pos) != null || existing == state) return Outcome.SKIPPED;
+
+        if (!free && NeoForge.EVENT_BUS.post(new BlockEvent.BreakEvent(level, pos, existing, player)).isCanceled()) {
+            return Outcome.DENIED;
+        }
+        // placement events describe the block that was there, so the snapshot is taken before the block is set; if a
+        // listener refuses, the old block goes back (the way a refused placement is undone for a player)
+        BlockSnapshot snapshot = BlockSnapshot.create(level.dimension(), level, pos);
+        level.setBlock(pos, state, 2);
+        if (NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(snapshot, level.getBlockState(pos.below()), player))
+                .isCanceled()) {
+            level.setBlock(pos, existing, 2);
+            return Outcome.DENIED;
+        }
+        before.put(pos.asLong(), existing);
+        return Outcome.PLACED;
+    }
+
+    private static void remember(ServerPlayer player, ServerLevel level, Map<Long, BlockState> before) {
+        if (before.isEmpty()) return;
+        Deque<Undo> history = HISTORY.computeIfAbsent(player.getUUID(), id -> new ArrayDeque<>());
+        history.addLast(new Undo(level.dimension(), before));
+        while (history.size() > UNDO_DEPTH) history.removeFirst();
+    }
+
+    private static String summary(int placed, int skipped, int denied) {
+        StringBuilder text = new StringBuilder("Placed ").append(placed).append(" blocks");
+        if (skipped > 0 || denied > 0) {
+            text.append(" (");
+            if (skipped > 0) text.append(skipped).append(" skipped");
+            if (skipped > 0 && denied > 0) text.append(", ");
+            if (denied > 0) text.append(denied).append(" refused by protection");
+            text.append(")");
+        }
+        return text.toString();
     }
 
     /**
@@ -124,31 +195,31 @@ public final class ShapeActions {
         Map<Long, BlockState> before = new LinkedHashMap<>();
         int placed = 0;
         int skipped = 0;
+        int denied = 0;
         for (Map.Entry<BlockPos, BlockState> entry : cells.entrySet()) {
-            BlockPos pos = entry.getKey();
-            BlockState state = entry.getValue();
-            if (!level.isInWorldBounds(pos) || !level.hasChunkAt(pos)) {
-                skipped++;
-                continue;
+            switch (setGuarded(level, player, entry.getKey(), entry.getValue(), overwrite, before)) {
+                case PLACED -> placed++;
+                case DENIED -> denied++;
+                default -> skipped++;
             }
-            BlockState existing = level.getBlockState(pos);
-            boolean free = existing.isAir() || existing.canBeReplaced();
-            if ((!free && !overwrite) || level.getBlockEntity(pos) != null || existing == state) {
-                skipped++;
-                continue;
+        }
+        remember(player, level, before);
+        if (!cells.isEmpty()) {
+            int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+            for (BlockPos pos : cells.keySet()) {
+                minX = Math.min(minX, pos.getX());
+                minY = Math.min(minY, pos.getY());
+                minZ = Math.min(minZ, pos.getZ());
+                maxX = Math.max(maxX, pos.getX());
+                maxY = Math.max(maxY, pos.getY());
+                maxZ = Math.max(maxZ, pos.getZ());
             }
-            before.put(pos.asLong(), existing);
-            level.setBlock(pos, state, 2);
-            placed++;
+            LAST_BOUNDS.put(player.getUUID(), new Bounds(level.dimension(), new BlockPos(minX, minY, minZ),
+                    new BlockPos(maxX, maxY, maxZ)));
         }
-        if (!before.isEmpty()) {
-            Deque<Undo> history = HISTORY.computeIfAbsent(player.getUUID(), id -> new ArrayDeque<>());
-            history.addLast(new Undo(level.dimension(), before));
-            while (history.size() > UNDO_DEPTH) history.removeFirst();
-        }
-        player.displayClientMessage(Component.literal("Placed " + placed + " blocks" +
-                (skipped > 0 ? " (" + skipped + " skipped)" : "") + ". Left-click to undo.")
-                .withStyle(ChatFormatting.AQUA), true);
+        player.displayClientMessage(Component.literal(summary(placed, skipped, denied) + ". Left-click to undo.")
+                .withStyle(denied > 0 ? ChatFormatting.GOLD : ChatFormatting.AQUA), true);
     }
 
     private static final int MAX_PLACED = 60_000;
@@ -161,6 +232,7 @@ public final class ShapeActions {
             return;
         }
         Undo last = history.removeLast();
+        LAST_BOUNDS.remove(player.getUUID());
         ServerLevel level = player.getServer().getLevel(last.dimension());
         if (level == null) return;
 
@@ -175,25 +247,15 @@ public final class ShapeActions {
                 .withStyle(ChatFormatting.AQUA), true);
     }
 
-    /** The lowest and highest corner of what the player last built (and has not undone), or null. */
+    /** The lowest and highest corner of what the player last built in the dimension they are in (and has not undone), or null. */
     public static BlockPos[] lastBuildBounds(ServerPlayer player) {
-        Deque<Undo> history = HISTORY.get(player.getUUID());
-        if (history == null || history.isEmpty() || history.peekLast().before().isEmpty()) return null;
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
-        for (long key : history.peekLast().before().keySet()) {
-            BlockPos pos = BlockPos.of(key);
-            minX = Math.min(minX, pos.getX());
-            minY = Math.min(minY, pos.getY());
-            minZ = Math.min(minZ, pos.getZ());
-            maxX = Math.max(maxX, pos.getX());
-            maxY = Math.max(maxY, pos.getY());
-            maxZ = Math.max(maxZ, pos.getZ());
-        }
-        return new BlockPos[] { new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ) };
+        Bounds bounds = LAST_BOUNDS.get(player.getUUID());
+        if (bounds == null || !bounds.dimension().equals(player.level().dimension())) return null;
+        return new BlockPos[] { bounds.low(), bounds.high() };
     }
 
     public static void forget(UUID player) {
         HISTORY.remove(player);
+        LAST_BOUNDS.remove(player);
     }
 }

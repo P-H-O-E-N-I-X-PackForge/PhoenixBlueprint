@@ -23,10 +23,14 @@ import net.phoenixvine.blueprint.Blueprint;
 import net.phoenixvine.blueprint.client.gui.ShapeHologramInfo;
 import net.phoenixvine.blueprint.client.render.GhostRenderer;
 import net.phoenixvine.blueprint.common.C2SShapeUndoPacket;
+import net.phoenixvine.blueprint.common.BlockOrienter;
+import net.phoenixvine.blueprint.common.PartBlocks;
 import net.phoenixvine.blueprint.common.ShapeGenerator;
+import net.phoenixvine.blueprint.common.ShapeOrientation;
 import net.phoenixvine.blueprint.common.ShapePlan;
 import net.phoenixvine.blueprint.common.BlueprintWandItem;
 
+import it.unimi.dsi.fastutil.longs.Long2ByteMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongIterator;
@@ -125,12 +129,20 @@ public final class ShapeHologram {
 
         ShapeGenerator.Result free = ShapeGenerator.freeParts(plan);
         ShapeGenerator.WorldResult pinned = ShapeGenerator.pinnedParts(plan, dimension);
+        // which way each block of the free parts turns (the pinned parts bring their own)
+        Long2ByteMap freeOrientation = plan.orient != ShapePlan.ORIENT_OFF && !free.truncated() ?
+                ShapeOrientation.compute(plan, s -> !s.locked, BlockPos.ZERO, free.shiftY(), dimension, free.cells()) :
+                ShapeGenerator.noOrientation();
         ShapeHologramInfo.blocks = free.cells().size() + pinned.cells().size();
         ShapeHologramInfo.tooBig = free.truncated() || pinned.truncated();
-        ShapeHologramInfo.haveBlock = haveBlock;
+        // every part builds from its own block, else from the one in the other hand (glass stands in when there is none)
+        BlockOrienter.Table[] tables = PartBlocks.tables(plan, state);
+        boolean valid = haveBlock || !PartBlocks.needsHeld(plan);
+        ShapeHologramInfo.haveBlock = valid;
         ShapeHologramInfo.pinnedElsewhere = pinned.skippedParts();
 
-        showingFree = show(FREE, anchor, free.cells(), state, haveBlock) && !ShapeHologramInfo.tooBig;
+        showingFree = show(FREE, anchor, free.cells(), freeOrientation, free.owners(), null, tables, valid) &&
+                !ShapeHologramInfo.tooBig;
         if (!showingFree) FREE.dispose();
 
         // the pinned parts are drawn relative to the first one's pin, a spot that does not move
@@ -143,24 +155,28 @@ public final class ShapeHologram {
         }
         showingPinned = false;
         if (reference != null && !pinned.cells().isEmpty() && !ShapeHologramInfo.tooBig) {
-            it.unimi.dsi.fastutil.longs.LongOpenHashSet relative = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
-            LongIterator cells = pinned.cells().iterator();
-            while (cells.hasNext()) {
-                long cell = cells.nextLong();
-                relative.add(BlockPos.asLong(BlockPos.getX(cell) - reference.getX(), BlockPos.getY(cell) -
-                        reference.getY(), BlockPos.getZ(cell) - reference.getZ()));
-            }
-            showingPinned = show(PINNED, reference, relative, state, haveBlock);
+            showingPinned = show(PINNED, reference, pinned.cells(), pinned.orientation(), pinned.owners(), reference,
+                    tables, valid);
         }
         if (!showingPinned) PINNED.dispose();
     }
 
-    private static boolean show(GhostRenderer renderer, BlockPos at,
-                                it.unimi.dsi.fastutil.longs.LongSet cells, BlockState state, boolean valid) {
+    /**
+     * Shows cells as ghost blocks. {@code origin}, when given, is the world spot the cells' coordinates are made relative to
+     * (the pinned parts are in the world, the renderer wants them from the spot they hang from).
+     */
+    private static boolean show(GhostRenderer renderer, BlockPos at, it.unimi.dsi.fastutil.longs.LongSet cells,
+                                Long2ByteMap orientation, it.unimi.dsi.fastutil.longs.Long2IntMap owners,
+                                @Nullable BlockPos origin, BlockOrienter.Table[] tables, boolean valid) {
         if (cells.isEmpty()) return false;
         Long2ReferenceMap<BlockState> blocks = new Long2ReferenceOpenHashMap<>(cells.size());
         LongIterator it = cells.iterator();
-        while (it.hasNext()) blocks.put(it.nextLong(), state);
+        while (it.hasNext()) {
+            long cell = it.nextLong();
+            long key = origin == null ? cell : BlockPos.asLong(BlockPos.getX(cell) - origin.getX(),
+                    BlockPos.getY(cell) - origin.getY(), BlockPos.getZ(cell) - origin.getZ());
+            blocks.put(key, PartBlocks.tableFor(tables, owners.get(cell)).get(orientation.get(cell)));
+        }
         renderer.showPreview(at, new MutableSchema(blocks), valid, KEEP_ALIVE_TICKS);
         return true;
     }

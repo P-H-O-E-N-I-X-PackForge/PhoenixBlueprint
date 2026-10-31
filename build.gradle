@@ -24,6 +24,13 @@ repositories {
         }
     }
     maven {
+        name = 'CurseMaven'
+        url = 'https://cursemaven.com/'
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
+    maven {
         name = 'ParchmentMC'
         url = 'https://maven.parchmentmc.org'
     }
@@ -108,6 +115,8 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    runtimeOnly ("curse.maven:phoenix-excavate-1624778:9379699")
 }
 
 sourceSets {

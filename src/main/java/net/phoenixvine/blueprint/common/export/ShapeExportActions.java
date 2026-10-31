@@ -33,6 +33,8 @@ public final class ShapeExportActions {
     public static final int CLEAR_TYPES = 17;
     public static final int CLEAR_MODIFIERS = 18;
     public static final int AUTO_SELECT = 19;
+    /** Selects the last build and switches to export mode: what the editor's "send to export" does. */
+    public static final int SEND_TO_EXPORT = 20;
     /** 100 + the index of the structure to edit. */
     public static final int SELECT_STRUCTURE = 100;
 
@@ -108,6 +110,20 @@ public final class ShapeExportActions {
             case AUTO_SELECT -> {
                 if (player == null) return;
                 autoSelect(player, sel);
+            }
+            case SEND_TO_EXPORT -> {
+                if (player == null) return;
+                BlockPos[] bounds = ShapeActions.lastBuildBounds(player);
+                if (bounds == null) {
+                    say(player, "Build the shape first, then send it to export.", ChatFormatting.RED);
+                } else {
+                    sel.corner1 = bounds[0];
+                    sel.corner2 = bounds[1];
+                    sel.controller = null;
+                    sel.controllerMode = false;
+                    sel.exportMode = true;
+                    say(player, "Export mode: the shape you built is selected.", ChatFormatting.AQUA);
+                }
             }
             case SELECT_BUILD -> {
                 if (player == null) return;

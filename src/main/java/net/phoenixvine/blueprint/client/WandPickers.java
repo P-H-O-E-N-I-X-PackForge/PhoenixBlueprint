@@ -24,6 +24,12 @@ public final class WandPickers {
         open(parent, label, blockIds(), field);
     }
 
+    /** Picks the block the selected part is built from. */
+    public static void pickPartBlock(Screen parent) {
+        Minecraft.getInstance().setScreen(new RegistryPickerScreen(parent, "Block for this part", blockIds(),
+                id -> WandEditor.partBlock(id.toString())));
+    }
+
     public static void pickTexture(Screen parent, int field, String label) {
         Minecraft.getInstance().setScreen(new WandTextureBrowser(parent, textureIds(),
                 id -> WandEditor.machine(field, id.toString())));

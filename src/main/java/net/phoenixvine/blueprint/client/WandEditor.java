@@ -9,6 +9,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.phoenixvine.blueprint.common.C2SWandEditPacket;
+import net.phoenixvine.blueprint.common.C2SWandPlanPacket;
+import net.phoenixvine.blueprint.common.ShapePlan;
 import net.phoenixvine.blueprint.common.WandEdits;
 
 import java.util.function.Consumer;
@@ -65,6 +67,26 @@ public final class WandEditor {
             buf.writeVarInt(field);
             buf.writeInt(value);
         });
+    }
+
+    /** The block the selected part is built from; empty: the block in the other hand. */
+    public static void partBlock(String id) {
+        send(WandEdits.BLOCK, buf -> buf.writeUtf(id, 128));
+    }
+
+    /** How directional blocks follow the shape: see {@code ShapePlan.orient}. */
+    public static void orient(int mode) {
+        send(WandEdits.ORIENT, buf -> buf.writeVarInt(mode));
+    }
+
+    /** Replaces the wand's whole plan (from the plan library or the clipboard), here at once and on the server. */
+    public static void applyPlan(ShapePlan plan) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) return;
+        net.minecraft.nbt.CompoundTag tag = plan.save();
+        ItemStack stack = ShapeExportClient.wand(player);
+        if (stack != null) C2SWandPlanPacket.apply(stack, tag);
+        PacketDistributor.sendToServer(new C2SWandPlanPacket(tag));
     }
 
     public static void select(int direction) {
