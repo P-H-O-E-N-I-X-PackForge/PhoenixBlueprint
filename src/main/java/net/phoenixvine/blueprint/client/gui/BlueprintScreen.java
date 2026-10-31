@@ -260,8 +260,10 @@ public final class BlueprintScreen extends Screen {
         g.fill(10, 20, W - 10, 21, T.line());
 
         boolean exporting = selection.exportMode;
-        chip(g, font, MODE_BUILD, "BUILD", W - 10 - 98, 25, 46, !exporting, mx, my, false);
-        chip(g, font, MODE_EXPORT, "EXPORT", W - 10 - 48, 25, 48, exporting, mx, my, false);
+        if (!(exporting && rulesPage)) {
+            chip(g, font, MODE_BUILD, "BUILD", W - 10 - 98, 25, 46, !exporting, mx, my, false);
+            chip(g, font, MODE_EXPORT, "EXPORT", W - 10 - 48, 25, 48, exporting, mx, my, false);
+        }
         if (!exporting) {
             String summary = ShapeHologramInfo.summary();
             int summaryColor = ShapeHologramInfo.tooBig ? HudModel.RED :
@@ -640,7 +642,7 @@ public final class BlueprintScreen extends Screen {
         return rows;
     }
 
-    private static final int RULES_TOP = 62;
+    private static final int RULES_TOP = 72;
     private static final int RULE_ROW = 15;
 
     private int visibleRuleRows() {
@@ -656,7 +658,7 @@ public final class BlueprintScreen extends Screen {
             case PredicateRules.MIN -> "at least";
             case PredicateRules.MAX -> "at most";
             case PredicateRules.EXACT -> "exactly";
-            default -> "any number";
+            default -> "any";
         };
     }
 
@@ -664,9 +666,8 @@ public final class BlueprintScreen extends Screen {
     private void paintRules(GuiGraphics g, Font font, int mx, int my) {
         chip(g, font, R_BACK, "< BACK", 10, 25, 50, false, mx, my, false);
         g.drawString(font, "LIMITS PER BLOCK", 66, 28, HudModel.DIM, false);
-        chip(g, font, R_RESET_ALL, "RESET ALL", W - 10 - 64, 43, 64, false, mx, my, false);
-        g.drawString(font, "How many of each the machine needs. Written on the predicate when you copy.", 10, 46,
-                HudModel.DIM, false);
+        chip(g, font, R_RESET_ALL, "RESET ALL", W - 10 - 64, 25, 64, false, mx, my, false);
+        g.drawString(font, "How many of each the machine needs, written on its predicate.", 10, 46, HudModel.DIM, false);
 
         List<RuleRow> rows = ruleRows();
         int visible = visibleRuleRows();
@@ -685,24 +686,26 @@ public final class BlueprintScreen extends Screen {
             int y = RULES_TOP + i * RULE_ROW;
             int base = R_ROWS + index * 8;
 
-            String label = font.plainSubstrByWidth(row.label(), 94);
+            // columns: name 10-100, count 102-132, mode 136-188, - number + 192-242, then three switches
+            String label = font.plainSubstrByWidth(row.label(), 88);
             g.drawString(font, label, 10, y + 2, limits.rules.containsKey(row.key()) ? HudModel.WHITE : HudModel.DIM,
                     false);
-            if (isOver(mx, my, 10, y, 94, 12) && !label.equals(row.label())) tooltip = row.label();
-            g.drawString(font, "x" + row.count(), 108, y + 2, T.accent(), false);
+            if (isOver(mx, my, 10, y, 90, 12) && !label.equals(row.label())) tooltip = row.label();
+            String count = "x" + row.count();
+            g.drawString(font, font.plainSubstrByWidth(count, 32), 102, y + 2, T.accent(), false);
 
             chip(g, font, base + ROW_MODE, modeName(rule.mode()), 136, y, 52, rule.mode() != PredicateRules.NONE, mx, my,
                     false);
             if (rule.mode() != PredicateRules.NONE) {
                 chip(g, font, base + ROW_MINUS, "-", 192, y, 12, false, mx, my, false);
-                String count = String.valueOf(rule.count());
-                g.drawString(font, count, 204 + (22 - font.width(count)) / 2, y + 2, HudModel.WHITE, false);
-                chip(g, font, base + ROW_PLUS, "+", 226, y, 12, false, mx, my, false);
+                String limit = String.valueOf(rule.count());
+                g.drawString(font, limit, 206 + (22 - font.width(limit)) / 2, y + 2, HudModel.WHITE, false);
+                chip(g, font, base + ROW_PLUS, "+", 230, y, 12, false, mx, my, false);
             }
             if (!row.key().startsWith("abilities:")) {
-                chip(g, font, base + ROW_HATCHES, "HATCH", 244, y, 40, rule.hatches(), mx, my, false);
-                chip(g, font, base + ROW_MAINTENANCE, "MAINT", 288, y, 34, rule.maintenance(), mx, my, false);
-                chip(g, font, base + ROW_CONTROLLER, "CTRL", 326, y, 44, rule.controller(), mx, my, false);
+                chip(g, font, base + ROW_HATCHES, "HATCH", 248, y, 40, rule.hatches(), mx, my, false);
+                chip(g, font, base + ROW_MAINTENANCE, "MAINT", 292, y, 34, rule.maintenance(), mx, my, false);
+                chip(g, font, base + ROW_CONTROLLER, "CTRL", 330, y, 32, rule.controller(), mx, my, false);
             }
         }
         if (rows.size() > visible) {

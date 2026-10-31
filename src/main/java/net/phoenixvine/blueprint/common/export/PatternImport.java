@@ -27,6 +27,8 @@ public final class PatternImport {
         FIELD,
         /** Hatches and buses by ability; {@code a} is the first PartAbility constant. */
         ABILITY,
+        /** A custom predicate method such as {@code PhoenixFissionPredicates.fissionModerators()}: {@code a} is the class (or null), {@code b} the method. */
+        CALL,
         UNKNOWN
     }
 
@@ -38,7 +40,8 @@ public final class PatternImport {
     }
 
     /** What was read: the slices (each a list of rows), the predicate of every symbol, and what could not be understood. */
-    public record Layout(List<List<String>> slices, Map<Character, Pred> symbols, List<String> problems) {}
+    public record Layout(List<List<String>> slices, Map<Character, Pred> symbols, List<String> problems,
+                         Map<Character, String> raws) {}
 
     private static final Pattern CALL = Pattern.compile("\\.(sliceRepeatable|slice|aisle|where)\\s*\\(");
     private static final Pattern REPEAT_PREFIX = Pattern.compile("^\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,");
@@ -52,6 +55,7 @@ public final class PatternImport {
         String text = stripComments(raw);
         List<List<String>> slices = new ArrayList<>();
         Map<Character, Pred> symbols = new LinkedHashMap<>();
+        Map<Character, String> raws = new LinkedHashMap<>();
         List<String> problems = new ArrayList<>();
 
         Matcher m = CALL.matcher(text);
@@ -66,7 +70,7 @@ public final class PatternImport {
             String args = text.substring(open + 1, close);
             from = close + 1;
             switch (m.group(1)) {
-                case "where" -> readWhere(args, symbols, problems);
+                case "where" -> readWhere(args, symbols, raws, problems);
                 case "sliceRepeatable" -> {
                     Matcher p = REPEAT_PREFIX.matcher(args);
                     int repeats = 1;
@@ -93,10 +97,11 @@ public final class PatternImport {
                 if (row.length() != chars) problems.add("rows have different lengths");
             }
         }
-        return new Layout(slices, symbols, problems.stream().distinct().toList());
+        return new Layout(slices, symbols, problems.stream().distinct().toList(), raws);
     }
 
-    private static void readWhere(String args, Map<Character, Pred> symbols, List<String> problems) {
+    private static void readWhere(String args, Map<Character, Pred> symbols, Map<Character, String> raws,
+                                  List<String> problems) {
         int comma = topLevelComma(args);
         if (comma < 0) {
             problems.add("a .where(...) without a predicate");
@@ -109,7 +114,9 @@ public final class PatternImport {
             problems.add("a .where(...) with a symbol that is not one character: " + symbolText);
             return;
         }
-        symbols.put(symbol.charAt(0), classify(args.substring(comma + 1).trim()));
+        String predicate = args.substring(comma + 1).trim();
+        symbols.put(symbol.charAt(0), classify(predicate));
+        raws.put(symbol.charAt(0), predicate.replaceAll("\\s+", " "));
     }
 
     // ------------------------------------------------------------------ predicates
@@ -123,15 +130,17 @@ public final class PatternImport {
 
     /** The first predicate of a symbol's expression (what follows a {@code .or(...)} is not looked at). */
     public static Pred classify(String e) {
+        // Predicates.blocks(...) or, with the class statically imported, just blocks(...)
         String expr = e.trim();
-        if (expr.startsWith("Predicates.controller(")) return Pred.of(Kind.CONTROLLER);
-        if (expr.startsWith("Predicates.air()")) return Pred.of(Kind.AIR);
-        if (expr.startsWith("Predicates.any()")) return Pred.of(Kind.ANY);
-        if (expr.startsWith("Predicates.abilities(")) {
+        if (expr.startsWith("Predicates.")) expr = expr.substring("Predicates.".length());
+        if (expr.startsWith("controller(")) return Pred.of(Kind.CONTROLLER);
+        if (expr.startsWith("air()")) return Pred.of(Kind.AIR);
+        if (expr.startsWith("any()")) return Pred.of(Kind.ANY);
+        if (expr.startsWith("abilities(")) {
             Matcher a = PART_ABILITY.matcher(expr);
             return a.find() ? new Pred(Kind.ABILITY, a.group(1), null) : Pred.of(Kind.UNKNOWN);
         }
-        if (expr.startsWith("Predicates.blocks(")) {
+        if (expr.startsWith("blocks(")) {
             int open = expr.indexOf('(');
             int close = closing(expr, open);
             String inner = (close < 0 ? expr.substring(open + 1) : expr.substring(open + 1, close)).trim();
@@ -150,8 +159,15 @@ public final class PatternImport {
             Matcher plain = FIELD_PLAIN.matcher(arg);
             if (plain.find()) return new Pred(Kind.FIELD, plain.group(1), plain.group(2));
         }
+        Matcher call = CUSTOM_CALL.matcher(expr);
+        if (call.find() && !"Predicates".equals(call.group(1))) return new Pred(Kind.CALL, call.group(1), call.group(2));
+        Matcher bare = BARE_CALL.matcher(expr);
+        if (bare.find()) return new Pred(Kind.CALL, null, bare.group(1));
         return Pred.of(Kind.UNKNOWN);
     }
+
+    private static final Pattern CUSTOM_CALL = Pattern.compile("^(\\w+)\\.(\\w+)\\(\\s*\\)");
+    private static final Pattern BARE_CALL = Pattern.compile("^(\\w+)\\(\\s*\\)");
 
     private static String withNamespace(String id) {
         return id.contains(":") ? id : "minecraft:" + id;

@@ -75,7 +75,7 @@ public final class ImportResolver {
 
         Map<Character, BlockState> states = new HashMap<>();
         Set<Character> controllers = new HashSet<>();
-        Set<Character> unresolved = new HashSet<>();
+        Set<Character> unresolved = new java.util.LinkedHashSet<>();
         for (var entry : layout.symbols().entrySet()) {
             char symbol = entry.getKey();
             PatternImport.Pred pred = entry.getValue();
@@ -89,10 +89,10 @@ public final class ImportResolver {
                 }
             }
         }
-        if (!unresolved.isEmpty()) {
-            StringBuilder b = new StringBuilder("could not find a block for: ");
-            for (char c : unresolved) b.append(c).append(' ');
-            problems.add(b.toString().trim());
+        for (char c : unresolved) {
+            String raw = layout.raws().getOrDefault(c, "");
+            problems.add("no block for '" + c + "'" + (raw.isEmpty() ? "" : ": " +
+                    (raw.length() > 60 ? raw.substring(0, 60) + "..." : raw)));
         }
 
         List<Cell> cells = new ArrayList<>();
@@ -121,6 +121,7 @@ public final class ImportResolver {
     }
 
     private static @Nullable BlockState state(PatternImport.Pred pred) {
+        if (pred.kind() == PatternImport.Kind.CALL) return PredicateEval.firstBlock(pred.a(), pred.b());
         String id = switch (pred.kind()) {
             case BLOCK -> pred.a();
             case FIELD -> BlockReferences.idForField(pred.a(), pred.b());

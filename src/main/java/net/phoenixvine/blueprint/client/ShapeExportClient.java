@@ -56,6 +56,10 @@ public final class ShapeExportClient {
     public static final KeyMapping COPY_KEY = new KeyMapping("key.phoenix_blueprint.blueprint_wand_copy",
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_BACKSLASH, CATEGORY);
 
+    /** Locks what is selected in place: the current part in build mode (shift: every part), the import in export mode. */
+    public static final KeyMapping LOCK_KEY = new KeyMapping("key.phoenix_blueprint.blueprint_wand_lock",
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L, CATEGORY);
+
     private static final int MAX_CLIPBOARD = 32767;
 
     private ShapeExportClient() {}
@@ -65,6 +69,7 @@ public final class ShapeExportClient {
         event.register(MODE_KEY);
         event.register(CONTROLLER_KEY);
         event.register(COPY_KEY);
+        event.register(LOCK_KEY);
     }
 
     @SubscribeEvent
@@ -84,6 +89,9 @@ public final class ShapeExportClient {
             if (holding) {
                 PacketDistributor.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.TOGGLE_CONTROLLER));
             }
+        }
+        while (LOCK_KEY.consumeClick()) {
+            if (holding) lockSelected(mc);
         }
         while (COPY_KEY.consumeClick()) {
             if (holding) PacketDistributor.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.COPY));
@@ -138,6 +146,43 @@ public final class ShapeExportClient {
         ResourceLocation sprite = mc.getBlockRenderer().getBlockModelShaper().getParticleIcon(state).contents().name();
         if (sprite.getPath().equals("missingno") || sprite.toString().equals(settings.derivedCasingTexture)) return;
         WandEditor.machine(net.phoenixvine.blueprint.common.export.MachineSettings.DERIVED_CASING, sprite.toString());
+    }
+
+    private static void say(LocalPlayer player, String text) {
+        player.displayClientMessage(Component.literal(text), true);
+    }
+
+    /**
+     * The lock key. Export mode: locks the imported pattern where it is shown (or lets it follow the aim again). Build mode:
+     * pins the current part at the aimed spot, or every part with shift held (pressing it on a pinned part unpins it).
+     */
+    private static void lockSelected(Minecraft mc) {
+        LocalPlayer player = mc.player;
+        ItemStack stack = wand(player);
+        if (stack == null) return;
+        if (WandSelection.read(stack).exportMode) {
+            if (!ImportHologram.active()) {
+                say(player, "Nothing imported to lock: IMPORT FROM CLIPBOARD first");
+            } else if (ImportHologram.toggleLock() || ImportHologram.locked()) {
+                say(player, ImportHologram.locked() ? "Import locked in place" : "Import follows the aim");
+            } else {
+                say(player, "Aim the wand at a block first");
+            }
+            return;
+        }
+        var plan = net.phoenixvine.blueprint.common.ShapePlan.read(stack);
+        boolean all = net.minecraft.client.gui.screens.Screen.hasShiftDown();
+        boolean pinned = all ? plan.parts.stream().allMatch(part -> part.locked) : plan.current().locked;
+        BlockPos at = ShapeHologram.anchor();
+        if (pinned) {
+            WandEditor.unpin(all);
+            say(player, all ? "Every part follows the aim" : "Part " + (plan.selected + 1) + " follows the aim");
+        } else if (at != null) {
+            WandEditor.pin(all, at, ShapeHologram.dimension());
+            say(player, all ? "Every part pinned here" : "Part " + (plan.selected + 1) + " pinned here");
+        } else {
+            say(player, "Aim the wand at a block first");
+        }
     }
 
     public static @Nullable ItemStack wand(LocalPlayer player) {

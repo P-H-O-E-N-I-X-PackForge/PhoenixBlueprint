@@ -105,6 +105,21 @@ public final class ExportCheck {
                 out.add(new Finding(Severity.WARNING, "no appearance block, and no controller to take one from"));
             }
             if (machine.recipeTypes.isEmpty()) out.add(new Finding(Severity.WARNING, "no recipe type picked"));
+            if (o.java()) {
+                String controllerBlock = null;
+                for (WandSelection.Structure s : sel.structures()) {
+                    if (s.controller != null && !world.getBlockState(s.controller).isAir()) {
+                        controllerBlock = BuiltInRegistries.BLOCK.getKey(world.getBlockState(s.controller).getBlock())
+                                .toString();
+                        break;
+                    }
+                }
+                String appearance = machine.effective(controllerBlock).appearanceBlock;
+                if (!appearance.isEmpty() && BlockReferences.lookup(appearance) == null) {
+                    out.add(new Finding(Severity.WARNING, "the appearance block " + appearance + " is in no *Blocks* or " +
+                            "*Casing* class, so it is written as a registry lookup lambda: pick a casing block"));
+                }
+            }
             if (machine.overlayTexture.isEmpty()) {
                 out.add(new Finding(Severity.INFO, "no overlay texture: the casing model is left out"));
             }

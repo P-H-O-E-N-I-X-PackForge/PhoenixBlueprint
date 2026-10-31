@@ -3,5 +3,6 @@
   "key.categories.phoenix_blueprint": "Phoenix Blueprint",
   "key.phoenix_blueprint.blueprint_wand_mode": "Blueprint Wand: Build / Export Mode",
   "key.phoenix_blueprint.blueprint_wand_controller": "Blueprint Wand: Mark Controller",
-  "key.phoenix_blueprint.blueprint_wand_copy": "Blueprint Wand: Copy Output"
+  "key.phoenix_blueprint.blueprint_wand_copy": "Blueprint Wand: Copy Output",
+  "key.phoenix_blueprint.blueprint_wand_lock": "Blueprint Wand: Lock In Place"
 }
