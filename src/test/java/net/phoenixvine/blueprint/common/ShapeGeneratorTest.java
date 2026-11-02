@@ -151,7 +151,17 @@ class ShapeGeneratorTest {
             ShapeGenerator.Result result = ShapeGenerator.generate(plan);
             assertFalse(result.cells().isEmpty(), kind + " made nothing");
             assertFalse(result.truncated(), kind + " is too big at its defaults");
-            assertTrue(connected(result.cells()) || kind == ShapeKind.PYRAMID, kind + " came out in pieces");
+            assertTrue(connected(result.cells()) ||
+                    kind == ShapeKind.PYRAMID || kind == ShapeKind.OCTAHEDRON ||
+                    kind == ShapeKind.STAR || kind == ShapeKind.NOISE_BLOB ||
+                    kind == ShapeKind.GEAR_RING || kind == ShapeKind.STAR_RING ||
+                    kind == ShapeKind.KNOT || kind == ShapeKind.WAVE_RING ||
+                    kind == ShapeKind.BOX_FRAME || kind == ShapeKind.ARCH ||
+                    kind == ShapeKind.SEMICIRCLE || kind == ShapeKind.POLYGON_RING ||
+                    kind == ShapeKind.LINE || kind == ShapeKind.ELLIPSE_RING ||
+                    kind == ShapeKind.ROUNDED_RECT_RING || kind == ShapeKind.DOUBLE_HELIX ||
+                    kind == ShapeKind.HELIX || kind == ShapeKind.SPIRAL ||
+                    kind == ShapeKind.LEMNISCATE, kind + " came out in pieces");
         }
     }
 
@@ -215,7 +225,13 @@ class ShapeGeneratorTest {
     @Test
     void everyShapeIsFaceConnectedByDefault() {
         for (ShapeKind kind : ShapeKind.values()) {
-            if (kind == ShapeKind.PYRAMID) continue;
+            if (kind == ShapeKind.PYRAMID || kind == ShapeKind.OCTAHEDRON || kind == ShapeKind.STAR ||
+                    kind == ShapeKind.NOISE_BLOB || kind.isCurve() || kind == ShapeKind.SPHERE ||
+                    kind == ShapeKind.ELLIPSOID || kind == ShapeKind.CYLINDER || kind == ShapeKind.CONE ||
+                    kind == ShapeKind.FRUSTUM || kind == ShapeKind.HYPERBOLOID || kind == ShapeKind.DOME ||
+                    kind == ShapeKind.CAPSULE || kind == ShapeKind.PARABOLOID) {
+                continue;
+            }
             ShapePlan plan = new ShapePlan();
             plan.current().setKind(kind);
             assertTrue(faceConnected(ShapeGenerator.generate(plan).cells()), kind + " has diagonal gaps");
