@@ -318,7 +318,11 @@ public final class ShapeGenerator {
                     inverse.transform(p);
                     double sdf = signedDistance(spec, p.x, p.y, p.z);
                     if (sdf > 0.5) continue;
-                    if (spec.hollow && sdf <= 0.5 - spec.wall) continue;
+                    if (spec.hollow) {
+                        // an open shell is only the wall of the sides: the ends (or base) are left out
+                        double wall = spec.open ? lateralDistance(spec, p.x, p.y, p.z) : Double.NaN;
+                        if ((Double.isNaN(wall) ? sdf : wall) <= 0.5 - spec.wall) continue;
+                    }
                     out.add(BlockPos.asLong(spec.dx + i, spec.dy + j, spec.dz + k));
                     if (out.size() > MAX_CELLS) return;
                 }
@@ -330,9 +334,17 @@ public final class ShapeGenerator {
         int a = s.size[0];
         int b = s.size[1];
         int c = s.size[2];
+        int d = s.size[3];
         return switch (s.kind) {
             case SPHERE, DOME -> a;
-            case ELLIPSOID, BOX -> Math.sqrt((double) a * a + (double) b * b + (double) c * c);
+            case ELLIPSOID, BOX, BOX_FRAME -> Math.sqrt((double) a * a + (double) b * b + (double) c * c);
+            case WEDGE, GABLE_ROOF, HIP_ROOF -> Math.sqrt((double) a * a + b * b / 4.0 + c * c / 4.0);
+            case STAIRS -> Math.sqrt((double) a * a + Math.pow(b * d / 2.0, 2) + Math.pow(b * c / 2.0, 2));
+            case ZIGGURAT -> Math.hypot(a * 1.5, b * c / 2.0);
+            case PARABOLOID, OCTAHEDRON -> Math.hypot(a, b / 2.0);
+            case STAR -> a;
+            case TWIST_TOWER -> Math.hypot(a, c / 2.0);
+            case NOISE_BLOB -> a + b + 1.0;
             case CYLINDER, CONE, CAPSULE -> Math.hypot(a, b / 2.0) + (s.kind == ShapeKind.CAPSULE ? a : 0);
             case PYRAMID -> Math.hypot(a * 1.5, b / 2.0);
             case FRUSTUM, HYPERBOLOID -> Math.hypot(Math.max(a, b), c / 2.0);
@@ -347,6 +359,7 @@ public final class ShapeGenerator {
         int a = s.size[0];
         int b = s.size[1];
         int c = s.size[2];
+        int d = s.size[3];
         switch (s.kind) {
             case SPHERE:
                 return Math.sqrt(x * x + y * y + z * z) - a;
@@ -404,6 +417,97 @@ public final class ShapeGenerator {
                 double ro = Math.hypot(x, z);
                 return Math.max(Math.max(ro - a, b - ro), Math.abs(y) - (c - 1) / 2.0);
             }
+            case BOX_FRAME: {
+                // how far inside each face the point is; it is on the frame where it is near two faces at once
+                double ix = a - Math.abs(x);
+                double iy = b - Math.abs(y);
+                double iz = c - Math.abs(z);
+                double nearest = Math.min(ix, Math.min(iy, iz));
+                double middle = Math.max(Math.min(ix, iy), Math.min(Math.max(ix, iy), iz));
+                return Math.max(-nearest, middle - (d - 1));
+            }
+            case WEDGE: {
+                // a ramp rising along +z
+                double halfH = (b - 1) / 2.0;
+                double halfL = (c - 1) / 2.0;
+                double slope = c > 1 ? (b - 1) / (double) (c - 1) : 0.0;
+                double above = ((y + halfH) - slope * (z + halfL)) / Math.sqrt(1 + slope * slope);
+                return Math.max(Math.max(Math.abs(x) - a, Math.abs(y) - halfH), Math.max(Math.abs(z) - halfL, above));
+            }
+            case STAIRS: {
+                // d blocks deep and c high a step, b steps, rising along +z
+                double halfL = (b * d - 1) / 2.0;
+                double halfH = (b * c - 1) / 2.0;
+                int step = (int) Math.max(0, Math.min(b - 1, Math.floor((z + halfL + 0.5) / d)));
+                double top = -halfH + (step + 1) * c - 1;
+                return Math.max(Math.max(Math.abs(x) - a, Math.abs(z) - halfL), Math.max(y - top, -halfH - y));
+            }
+            case ZIGGURAT: {
+                // b square tiers, each d blocks narrower on every side than the one below
+                double halfH = (b * c - 1) / 2.0;
+                int level = (int) Math.max(0, Math.min(b - 1, Math.floor((y + halfH + 0.5) / c)));
+                double size = a - (double) level * d;
+                return Math.max(Math.max(Math.abs(x), Math.abs(z)) - size, Math.abs(y) - halfH);
+            }
+            case GABLE_ROOF: {
+                // a ridge along z, sloping down to the eaves at x = +-a
+                double halfH = (b - 1) / 2.0;
+                double halfL = (c - 1) / 2.0;
+                double slope = (b - 1) / (double) Math.max(1, a);
+                double over = ((y + halfH) + slope * Math.abs(x) - (b - 1)) / Math.sqrt(1 + slope * slope);
+                return Math.max(Math.max(Math.abs(y) - halfH, Math.abs(z) - halfL), Math.max(over, Math.abs(x) - a));
+            }
+            case HIP_ROOF: {
+                // like the gable roof, sloping down on all four sides
+                double halfH = (b - 1) / 2.0;
+                double halfW = Math.max(1.0, a);
+                double halfL = Math.max(1.0, (c - 1) / 2.0);
+                double sx = (b - 1) / halfW;
+                double sz = (b - 1) / halfL;
+                double overX = ((y + halfH) + sx * Math.abs(x) - (b - 1)) / Math.sqrt(1 + sx * sx);
+                double overZ = ((y + halfH) + sz * Math.abs(z) - (b - 1)) / Math.sqrt(1 + sz * sz);
+                return Math.max(Math.abs(y) - halfH, Math.max(overX, overZ));
+            }
+            case PARABOLOID: {
+                // a bowl opening upward: radius a at the top, b deep
+                double half = (b - 1) / 2.0;
+                double t = b > 1 ? Math.max(0.0, Math.min(1.0, (y + half) / (b - 1))) : 1.0;
+                return Math.max(Math.hypot(x, z) - a * Math.sqrt(t), Math.abs(y) - half);
+            }
+            case OCTAHEDRON: {
+                double halfH = Math.max(0.5, b / 2.0);
+                double k = (Math.abs(x) + Math.abs(z)) / a + Math.abs(y) / halfH - 1.0;
+                return k * Math.min(a, halfH) / 1.8;
+            }
+            case STAR: {
+                // three spikes, one along each axis, each tapering from b blocks wide at the middle to a point a away
+                double best = Double.MAX_VALUE;
+                for (int axis = 0; axis < 3; axis++) {
+                    double along = axis == 0 ? x : axis == 1 ? y : z;
+                    double p1 = axis == 0 ? y : x;
+                    double p2 = axis == 2 ? y : z;
+                    double reach = b * (1.0 - Math.abs(along) / a);
+                    best = Math.min(best, Math.max(Math.hypot(p1, p2) - reach, Math.abs(along) - a));
+                }
+                return best;
+            }
+            case TWIST_TOWER: {
+                // a prism with b sides, turned d degrees from the bottom to the top
+                double half = (c - 1) / 2.0;
+                double turn = Math.toRadians(d) * (c > 1 ? (y + half) / (c - 1) : 0.0);
+                double cos = Math.cos(turn);
+                double sin = Math.sin(turn);
+                double tx = x * cos + z * sin;
+                double tz = -x * sin + z * cos;
+                double sector = Math.PI * 2 / b;
+                double angle = Math.atan2(tz, tx);
+                if (angle < 0) angle += Math.PI * 2;
+                double facing = (Math.floor(angle / sector) + 0.5) * sector;
+                double edge = tx * Math.cos(facing) + tz * Math.sin(facing) - a * Math.cos(Math.PI / b);
+                return Math.max(edge, Math.abs(y) - half);
+            }
+            case NOISE_BLOB:
+                return Math.sqrt(x * x + y * y + z * z) - (a + b * noise(x / c, y / c, z / c, d));
             case HALF_DISC: {
                 // a disc cut along its diameter: the half on the +z side, the cut edge on the x axis
                 double ro = Math.hypot(x, z);
@@ -412,6 +516,128 @@ public final class ShapeGenerator {
             default:
                 return Double.MAX_VALUE;
         }
+    }
+
+    /**
+     * How far a point is outside the sides of a shape, leaving its ends out (the axial limits that close a pipe, a tower or a
+     * dome). Used to make an open shell; NaN for a shape with no sides to speak of (a sphere, say).
+     */
+    static double lateralDistance(ShapeSpec s, double x, double y, double z) {
+        int a = s.size[0];
+        int b = s.size[1];
+        int c = s.size[2];
+        switch (s.kind) {
+            case CYLINDER:
+                return Math.hypot(x, z) - a;
+            case CONE: {
+                double half = (b - 1) / 2.0;
+                double t = b > 1 ? (y + half) / (b - 1) : 0.0;
+                return Math.hypot(x, z) - a * (1.0 - Math.max(0.0, Math.min(1.0, t)));
+            }
+            case PYRAMID: {
+                double half = (b - 1) / 2.0;
+                double t = b > 1 ? (y + half) / (b - 1) : 0.0;
+                return Math.max(Math.abs(x), Math.abs(z)) - a * (1.0 - Math.max(0.0, Math.min(1.0, t)));
+            }
+            case FRUSTUM: {
+                double half = (c - 1) / 2.0;
+                double t = c > 1 ? (y + half) / (c - 1) : 0.0;
+                return Math.hypot(x, z) - (a + (b - a) * Math.max(0.0, Math.min(1.0, t)));
+            }
+            case HYPERBOLOID: {
+                double half = (c - 1) / 2.0;
+                double u = half > 0 ? Math.max(-1.0, Math.min(1.0, y / half)) : 0.0;
+                return Math.hypot(x, z) - Math.sqrt(a * a + ((double) b * b - (double) a * a) * u * u);
+            }
+            case PARABOLOID: {
+                double half = (b - 1) / 2.0;
+                double t = b > 1 ? Math.max(0.0, Math.min(1.0, (y + half) / (b - 1))) : 1.0;
+                return Math.hypot(x, z) - a * Math.sqrt(t);
+            }
+            case PRISM:
+            case TWIST_TOWER: {
+                double tx = x;
+                double tz = z;
+                double sides = b;
+                if (s.kind == ShapeKind.TWIST_TOWER) {
+                    double half = (c - 1) / 2.0;
+                    double turn = Math.toRadians(s.size[3]) * (c > 1 ? (y + half) / (c - 1) : 0.0);
+                    tx = x * Math.cos(turn) + z * Math.sin(turn);
+                    tz = -x * Math.sin(turn) + z * Math.cos(turn);
+                }
+                double sector = Math.PI * 2 / sides;
+                double angle = Math.atan2(tz, tx);
+                if (angle < 0) angle += Math.PI * 2;
+                double facing = (Math.floor(angle / sector) + 0.5) * sector;
+                return tx * Math.cos(facing) + tz * Math.sin(facing) - a * Math.cos(Math.PI / sides);
+            }
+            case BOX:
+                return Math.max(Math.abs(x) - a, Math.abs(z) - c);
+            case DOME:
+                return Math.sqrt(x * x + y * y + z * z) - a;
+            case ZIGGURAT: {
+                double halfH = (b * c - 1) / 2.0;
+                int level = (int) Math.max(0, Math.min(b - 1, Math.floor((y + halfH + 0.5) / c)));
+                return Math.max(Math.abs(x), Math.abs(z)) - (a - (double) level * s.size[3]);
+            }
+            case WEDGE: {
+                double halfH = (b - 1) / 2.0;
+                double halfL = (c - 1) / 2.0;
+                double slope = c > 1 ? (b - 1) / (double) (c - 1) : 0.0;
+                return ((y + halfH) - slope * (z + halfL)) / Math.sqrt(1 + slope * slope);
+            }
+            case GABLE_ROOF: {
+                double halfH = (b - 1) / 2.0;
+                double slope = (b - 1) / (double) Math.max(1, a);
+                return ((y + halfH) + slope * Math.abs(x) - (b - 1)) / Math.sqrt(1 + slope * slope);
+            }
+            case HIP_ROOF: {
+                double halfH = (b - 1) / 2.0;
+                double halfW = Math.max(1.0, a);
+                double halfL = Math.max(1.0, (c - 1) / 2.0);
+                double sx = (b - 1) / halfW;
+                double sz = (b - 1) / halfL;
+                return Math.max(((y + halfH) + sx * Math.abs(x) - (b - 1)) / Math.sqrt(1 + sx * sx),
+                        ((y + halfH) + sz * Math.abs(z) - (b - 1)) / Math.sqrt(1 + sz * sz));
+            }
+            default:
+                return Double.NaN;
+        }
+    }
+
+    /** Smooth random values from -1 to 1, the same everywhere for one seed: two layers of value noise. */
+    private static double noise(double x, double y, double z, int seed) {
+        return 0.65 * valueNoise(x, y, z, seed) + 0.35 * valueNoise(x * 2.3 + 17.1, y * 2.3 + 5.7, z * 2.3 + 9.3, seed + 101);
+    }
+
+    private static double valueNoise(double x, double y, double z, int seed) {
+        int ix = (int) Math.floor(x);
+        int iy = (int) Math.floor(y);
+        int iz = (int) Math.floor(z);
+        double fx = smooth(x - ix);
+        double fy = smooth(y - iy);
+        double fz = smooth(z - iz);
+        double x00 = lerp(lattice(ix, iy, iz, seed), lattice(ix + 1, iy, iz, seed), fx);
+        double x10 = lerp(lattice(ix, iy + 1, iz, seed), lattice(ix + 1, iy + 1, iz, seed), fx);
+        double x01 = lerp(lattice(ix, iy, iz + 1, seed), lattice(ix + 1, iy, iz + 1, seed), fx);
+        double x11 = lerp(lattice(ix, iy + 1, iz + 1, seed), lattice(ix + 1, iy + 1, iz + 1, seed), fx);
+        return lerp(lerp(x00, x10, fy), lerp(x01, x11, fy), fz);
+    }
+
+    private static double smooth(double t) {
+        return t * t * (3 - 2 * t);
+    }
+
+    private static double lerp(double a, double b, double t) {
+        return a + (b - a) * t;
+    }
+
+    /** A fixed pseudo-random value from -1 to 1 for a point of the grid. */
+    private static double lattice(int x, int y, int z, int seed) {
+        int h = x * 374761393 + y * 668265263 + z * 1274126177 + seed * 362437;
+        h = (h ^ (h >>> 13)) * 1274126177;
+        h ^= h >>> 16;
+        return (h & 0xFFFFFF) / (double) 0x7FFFFF - 1.0;
     }
 
     // ------------------------------------------------------------------ curves
@@ -493,6 +719,65 @@ public final class ShapeGenerator {
                 }
                 return polyline(vertices, true);
             }
+            case ELLIPSE_RING:
+                return sample(t -> new Vector3d(a * Math.cos(t * Math.PI * 2), 0, c * Math.sin(t * Math.PI * 2)), true);
+            case ROUNDED_RECT_RING: {
+                // a rectangle a by c (half-sizes) with its corners rounded to radius d
+                double r = Math.min(d, Math.min(a, c));
+                double[][] centres = { { a - r, c - r }, { -(a - r), c - r }, { -(a - r), -(c - r) }, { a - r, -(c - r) } };
+                int steps = r <= 0 ? 0 : Math.max(2, (int) Math.ceil(r * Math.PI / 2 / 0.4));
+                List<Vector3d> outline = new ArrayList<>();
+                for (int k = 0; k < 4; k++) {
+                    if (steps == 0) {
+                        outline.add(new Vector3d(centres[k][0], 0, centres[k][1]));
+                        continue;
+                    }
+                    for (int j = 0; j <= steps; j++) {
+                        double angle = Math.PI / 2 * (k + j / (double) steps);
+                        outline.add(new Vector3d(centres[k][0] + r * Math.cos(angle), 0,
+                                centres[k][1] + r * Math.sin(angle)));
+                    }
+                }
+                return polyline(outline, true);
+            }
+            case GEAR_RING: {
+                // c teeth, each d high: the top of a tooth is half the way round to the next
+                List<Vector3d> outline = new ArrayList<>();
+                for (int i = 0; i < c; i++) {
+                    addArc(outline, a + d, Math.PI * 2 * (i + 0.25) / c, Math.PI * 2 * (i + 0.75) / c);
+                    addArc(outline, a, Math.PI * 2 * (i + 0.75) / c, Math.PI * 2 * (i + 1.25) / c);
+                }
+                return polyline(outline, true);
+            }
+            case GOTHIC_ARCH: {
+                // two arcs, each centred on the far side of the middle; sharpness 0 is a round arch, 100 an equilateral one
+                double radius = a * (1 + c / 100.0);
+                double shift = radius - a;
+                double apex = Math.acos(Math.min(1.0, shift / radius));
+                int steps = Math.max(4, (int) Math.ceil(radius * apex / 0.3));
+                List<Vector3d> arc = new ArrayList<>();
+                for (int i = 0; i <= steps; i++) {
+                    double angle = apex * i / steps;
+                    arc.add(new Vector3d(shift + radius * Math.cos(Math.PI - angle), radius * Math.sin(Math.PI - angle), 0));
+                    arc.add(new Vector3d(-shift + radius * Math.cos(angle), radius * Math.sin(angle), 0));
+                }
+                if (d <= 1) return arc;
+                List<Vector3d> all = new ArrayList<>(arc.size() * d);
+                for (int k = 0; k < d; k++) {
+                    double z = k - (d - 1) / 2.0;
+                    for (Vector3d v : arc) all.add(new Vector3d(v.x, v.y, z));
+                }
+                return all;
+            }
+            case DOUBLE_HELIX: {
+                List<Vector3d> all = new ArrayList<>();
+                for (int strand = 0; strand < 2; strand++) {
+                    double phase = strand * Math.PI;
+                    all.addAll(sample(t -> new Vector3d(a * Math.cos(t * Math.PI * 2 * d + phase), c * (t - 0.5),
+                            a * Math.sin(t * Math.PI * 2 * d + phase)), false));
+                }
+                return all;
+            }
             case SEMICIRCLE: {
                 // an arc of the circle, sweep degrees wide, centred on the +x side (a half circle at 180)
                 double half = Math.toRadians(c) / 2.0;
@@ -547,6 +832,15 @@ public final class ShapeGenerator {
         int count = closed ? n : n + 1;
         for (int i = 0; i < count; i++) points.add(f.apply(i / (double) n));
         return points;
+    }
+
+    /** Points along an arc of the circle of the given radius in the xz plane, about 0.4 apart. */
+    private static void addArc(List<Vector3d> out, double radius, double from, double to) {
+        int steps = Math.max(1, (int) Math.ceil(radius * Math.abs(to - from) / 0.4));
+        for (int i = 0; i <= steps; i++) {
+            double angle = from + (to - from) * i / steps;
+            out.add(new Vector3d(radius * Math.cos(angle), 0, radius * Math.sin(angle)));
+        }
     }
 
     private static List<Vector3d> polyline(List<Vector3d> vertices, boolean closed) {

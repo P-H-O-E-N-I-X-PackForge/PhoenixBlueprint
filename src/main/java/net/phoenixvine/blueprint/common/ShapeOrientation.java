@@ -93,7 +93,7 @@ public final class ShapeOrientation {
 
     private static boolean closed(ShapeKind kind) {
         return switch (kind) {
-            case RING, KNOT, WAVE_RING, STAR_RING, LEMNISCATE, POLYGON_RING -> true;
+            case RING, KNOT, WAVE_RING, STAR_RING, LEMNISCATE, POLYGON_RING, ELLIPSE_RING, ROUNDED_RECT_RING, GEAR_RING -> true;
             default -> false;
         };
     }
@@ -135,7 +135,7 @@ public final class ShapeOrientation {
             inverse = new Quaterniond(rotation).conjugate();
             curve = spec.kind.isCurve();
             axisAlongShape = switch (spec.kind) {
-                case CYLINDER, CONE, FRUSTUM, HYPERBOLOID, PYRAMID, PRISM, CAPSULE, DISC, HALF_DISC -> true;
+                case CYLINDER, CONE, FRUSTUM, HYPERBOLOID, PYRAMID, PRISM, CAPSULE, DISC, HALF_DISC, PARABOLOID, TWIST_TOWER -> true;
                 default -> false;
             };
             if (curve) buildCurve();

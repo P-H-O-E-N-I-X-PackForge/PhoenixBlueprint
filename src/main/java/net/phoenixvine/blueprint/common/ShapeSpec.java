@@ -10,6 +10,8 @@ public final class ShapeSpec {
     public ShapeKind kind = ShapeKind.RING;
     public final int[] size = new int[4];
     public boolean hollow = false;
+    /** A hollow shape with no ends or base: a pipe or tower instead of a closed shell (only shapes that have a wall). */
+    public boolean open = false;
     /** How thick the shell of a hollow shape is, in blocks. */
     public int wall = 1;
     /** Rotation in degrees about Y, X and Z, applied in that order. */
@@ -76,6 +78,7 @@ public final class ShapeSpec {
         ShapeSpec out = new ShapeSpec(kind);
         System.arraycopy(size, 0, out.size, 0, 4);
         out.hollow = hollow;
+        out.open = open;
         out.wall = wall;
         out.yaw = yaw;
         out.pitch = pitch;
@@ -179,6 +182,7 @@ public final class ShapeSpec {
         tag.putString("kind", kind.name());
         tag.putIntArray("size", size);
         tag.putBoolean("hollow", hollow);
+        if (open) tag.putBoolean("open", true);
         tag.putInt("wall", wall);
         tag.putInt("yaw", yaw);
         tag.putInt("pitch", pitch);
@@ -219,6 +223,7 @@ public final class ShapeSpec {
                     param.def());
         }
         spec.hollow = tag.getBoolean("hollow");
+        spec.open = tag.getBoolean("open");
         spec.wall = Math.max(1, Math.min(16, tag.contains("wall") ? tag.getInt("wall") : 1));
         spec.yaw = Math.floorMod(tag.getInt("yaw"), 360);
         spec.pitch = Math.floorMod(tag.getInt("pitch"), 360);
@@ -254,13 +259,13 @@ public final class ShapeSpec {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash(kind, Arrays.hashCode(size), hollow, wall, yaw, pitch, roll, dx, dy, dz, locked,
+        return java.util.Objects.hash(kind, Arrays.hashCode(size), hollow, open, wall, yaw, pitch, roll, dx, dy, dz, locked,
                 pinDim, pinX, pinY, pinZ, block, arrayMode, arrayCount, arraySpacing, mirrorX, mirrorY, mirrorZ);
     }
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof ShapeSpec s && kind == s.kind && Arrays.equals(size, s.size) && hollow == s.hollow &&
+        return o instanceof ShapeSpec s && kind == s.kind && Arrays.equals(size, s.size) && hollow == s.hollow && open == s.open &&
                 wall == s.wall && yaw == s.yaw && pitch == s.pitch && roll == s.roll && dx == s.dx && dy == s.dy &&
                 dz == s.dz && locked == s.locked && pinDim.equals(s.pinDim) && pinX == s.pinX && pinY == s.pinY &&
                 pinZ == s.pinZ && block.equals(s.block) && arrayMode == s.arrayMode && arrayCount == s.arrayCount &&

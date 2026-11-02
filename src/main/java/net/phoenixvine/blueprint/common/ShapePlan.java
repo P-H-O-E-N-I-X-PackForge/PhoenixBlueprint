@@ -16,7 +16,7 @@ import java.util.Objects;
  */
 public final class ShapePlan {
 
-    public static final int MAX_PARTS = 12;
+    public static final int MAX_PARTS = 8;
     private static final String KEY = "ShapePlan";
 
     public final List<ShapeSpec> parts = new ArrayList<>();

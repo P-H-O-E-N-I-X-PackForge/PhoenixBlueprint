@@ -18,6 +18,7 @@ import net.phoenixvine.blueprint.client.ImportHologram;
 import net.phoenixvine.blueprint.client.ShapeExportClient;
 import net.phoenixvine.blueprint.client.ShapeHologram;
 import net.phoenixvine.blueprint.client.WandEditor;
+import net.phoenixvine.blueprint.client.PlanLibrary;
 import net.phoenixvine.blueprint.client.WandPickers;
 import net.phoenixvine.blueprint.client.gui.hud.GuiDraw;
 import net.phoenixvine.blueprint.client.gui.hud.HudModel;
@@ -79,12 +80,24 @@ public final class BlueprintScreen extends Screen {
     private static final int PIN_PART = 260;
     private static final int PIN_ALL = 261;
     private static final int ORIENT = 262;
-    private static final int LIBRARY = 263;
+    private static final int LIB_TAB = 500;
+    private static final int LIB_SAVE = 501;
+    private static final int LIB_LOAD = 502;
+    private static final int LIB_DELETE = 503;
+    private static final int LIB_COPY = 504;
+    private static final int LIB_PASTE = 505;
+    private static final int LIB_FOLDER = 506;
+    private static final int LIB_ROW = 520;
+    private static final int LIB_TOP = 40;
+    private static final int LIB_ROWS = 13;
+    private static final int LIB_ROW_H = 14;
+    private static final int LIB_BAR_X = 228;
     private static final int ARRAY_MODE = 264;
     private static final int MIRROR_X = 265;
     private static final int MIRROR_Y = 266;
     private static final int MIRROR_Z = 267;
     private static final int PART_BLOCK = 268;
+    private static final int OPEN_ENDS = 285;
     private static final int SEND_EXPORT = 269;
 
     // the shape list: a window of this many rows onto all the shapes, scrolled with the wheel or the bar beside it
@@ -174,6 +187,18 @@ public final class BlueprintScreen extends Screen {
     private int shapeBarThumb = 8;
     private boolean shapeBarDrag = false;
     private ShapeKind shownKind;
+
+    // the library tab: the plans saved on this computer
+    private boolean libraryTab = false;
+    private boolean libDirty = true;
+    private java.util.List<PlanLibrary.Entry> libEntries = new java.util.ArrayList<>();
+    private String libSelected = "";
+    private ShapePlan libPreview;
+    private int libScroll = 0;
+    private int libMaxScroll = 0;
+    private int libBarThumb = 8;
+    private boolean libBarDrag = false;
+    private boolean libConfirmDelete = false;
     private int lastSent = Integer.MIN_VALUE;
 
     private String status = "";
@@ -280,11 +305,14 @@ public final class BlueprintScreen extends Screen {
         g.fill(10, 20, W - 10, 21, T.line());
 
         boolean exporting = selection.exportMode;
-        if (!(exporting && rulesPage)) {
-            chip(g, font, MODE_BUILD, "BUILD", W - 10 - 98, 25, 46, !exporting, mx, my, false);
-            chip(g, font, MODE_EXPORT, "EXPORT", W - 10 - 48, 25, 48, exporting, mx, my, false);
+        if (libraryTab || !(exporting && rulesPage)) {
+            chip(g, font, MODE_BUILD, "BUILD", 84, 4, 46, !exporting && !libraryTab, mx, my, false);
+            chip(g, font, LIB_TAB, "LIBRARY", 134, 4, 56, libraryTab, mx, my, false);
+            chip(g, font, MODE_EXPORT, "EXPORT", 194, 4, 48, exporting && !libraryTab, mx, my, false);
         }
-        if (!exporting) {
+        if (libraryTab) {
+            paintLibrary(g, font, mx, my);
+        } else if (!exporting) {
             String summary = ShapeHologramInfo.summary();
             int summaryColor = ShapeHologramInfo.tooBig ? HudModel.RED :
                     ShapeHologramInfo.haveBlock ? HudModel.GREEN : HudModel.GOLD;
@@ -301,6 +329,128 @@ public final class BlueprintScreen extends Screen {
         g.pose().popPose();
 
         if (tooltip != null) g.renderTooltip(font, Component.literal(tooltip), mouseX, mouseY);
+    }
+
+    // ------------------------------------------------------------------ the library tab
+
+    private void refreshLibrary() {
+        libEntries = PlanLibrary.list();
+        if (!libSelected.isEmpty() && !PlanLibrary.exists(libSelected)) libSelected = "";
+        loadPreview();
+        libDirty = false;
+    }
+
+    private void loadPreview() {
+        libPreview = null;
+        if (libSelected.isEmpty()) return;
+        try {
+            libPreview = PlanLibrary.load(libSelected);
+        } catch (java.io.IOException | com.mojang.brigadier.exceptions.CommandSyntaxException | RuntimeException e) {
+            libPreview = null;
+        }
+    }
+
+    /** One line about a part: its shape, sizes and what is special about it. */
+    private static String describePart(int index, ShapeSpec part) {
+        StringBuilder text = new StringBuilder().append(index + 1).append(": ").append(part.kind.displayName());
+        boolean first = true;
+        for (int i = 0; i < 4; i++) {
+            if (part.kind.param(i) == null) continue;
+            text.append(first ? "  " : " x ").append(part.size[i]);
+            first = false;
+        }
+        if (!part.block.isEmpty()) {
+            text.append("  [").append(part.block.startsWith("minecraft:") ? part.block.substring(10) : part.block).append("]");
+        }
+        if (part.hollow) text.append(part.open ? "  open" : "  hollow");
+        if (part.arrayMode != ShapeSpec.ARRAY_OFF) text.append("  repeat ").append(part.arrayCount);
+        if (part.mirrorX || part.mirrorY || part.mirrorZ) text.append("  mirrored");
+        return text.toString();
+    }
+
+    private void paintLibrary(GuiGraphics g, Font font, int mx, int my) {
+        if (libDirty) refreshLibrary();
+        g.drawString(font, "SAVED PLANS (" + libEntries.size() + ")", 10, 28, HudModel.DIM, false);
+
+        // the list
+        int listBottom = LIB_TOP + LIB_ROWS * LIB_ROW_H;
+        g.fill(10, LIB_TOP - 2, 226, listBottom, GuiDraw.withAlpha(T.bgTop(), 0xCC));
+        GuiDraw.drawBorder(g, 10, LIB_TOP - 2, 216, listBottom - LIB_TOP + 2, GuiDraw.withAlpha(T.accent(), 0x55), 1);
+        libMaxScroll = Math.max(0, libEntries.size() - LIB_ROWS);
+        libScroll = Mth.clamp(libScroll, 0, libMaxScroll);
+        if (libEntries.isEmpty()) {
+            g.drawCenteredString(font, "Nothing saved yet", 118, LIB_TOP + 20, HudModel.DIM);
+            g.drawCenteredString(font, "SAVE WAND PLAN keeps what is on the wand", 118, LIB_TOP + 32, HudModel.DIM);
+        }
+        for (int r = 0; r < LIB_ROWS; r++) {
+            int i = libScroll + r;
+            if (i >= libEntries.size()) break;
+            PlanLibrary.Entry entry = libEntries.get(i);
+            int y = LIB_TOP + r * LIB_ROW_H;
+            boolean selected = entry.name().equals(libSelected);
+            boolean hover = mx >= 10 && mx < 226 && my >= y && my < y + LIB_ROW_H - 1;
+            if (selected || hover) {
+                g.fill(11, y, 225, y + LIB_ROW_H - 1, GuiDraw.mix(T.bgTop(), T.accent(), selected ? 0.30f : 0.14f));
+            }
+            g.drawString(font, font.plainSubstrByWidth(entry.name(), 98), 14, y + 3, selected ? HudModel.WHITE : T.accent(),
+                    false);
+            g.drawString(font, font.plainSubstrByWidth(entry.summary(), 104), 116, y + 3, HudModel.DIM, false);
+            if (hover && (font.width(entry.name()) > 98 || font.width(entry.summary()) > 104)) {
+                tooltip = entry.name() + " - " + entry.summary();
+            }
+            controls.add(new Control(LIB_ROW + i, Kind.CHIP, 10, y, 216, LIB_ROW_H - 1, 0, 0, 0, null));
+        }
+        if (libMaxScroll > 0) {
+            int trackH = LIB_ROWS * LIB_ROW_H - 2;
+            libBarThumb = Math.max(8, trackH * LIB_ROWS / libEntries.size());
+            int thumbY = LIB_TOP - 2 + (trackH - libBarThumb) * libScroll / libMaxScroll;
+            g.fill(LIB_BAR_X, LIB_TOP - 2, LIB_BAR_X + 4, LIB_TOP - 2 + trackH, T.dim());
+            g.fill(LIB_BAR_X, thumbY, LIB_BAR_X + 4, thumbY + libBarThumb, libBarDrag ? HudModel.WHITE : T.accent());
+        }
+
+        // what is in the chosen plan
+        int dy = listBottom + 6;
+        g.drawString(font, libSelected.isEmpty() ? "NOTHING PICKED" : libSelected.toUpperCase(java.util.Locale.ROOT), 10, dy,
+                T.accent(), false);
+        if (libPreview == null) {
+            if (!libSelected.isEmpty()) g.drawString(font, "This plan could not be read", 10, dy + 11, HudModel.RED, false);
+        } else {
+            int shown = Math.min(libPreview.parts.size(), 5);
+            for (int i = 0; i < shown; i++) {
+                g.drawString(font, font.plainSubstrByWidth(describePart(i, libPreview.parts.get(i)), 214), 10, dy + 11 + i * 10,
+                        HudModel.DIM, false);
+            }
+            if (libPreview.parts.size() > shown) {
+                g.drawString(font, "+" + (libPreview.parts.size() - shown) + " more parts", 10, dy + 11 + shown * 10,
+                        HudModel.DIM, false);
+            }
+        }
+
+        // the actions
+        int rx = 240;
+        int rw = 130;
+        chip(g, font, LIB_SAVE, "SAVE WAND PLAN...", rx, LIB_TOP, rw, false, mx, my, true);
+        chip(g, font, LIB_LOAD, "LOAD SELECTED", rx, LIB_TOP + 17, rw, false, mx, my, true);
+        chip(g, font, LIB_DELETE, libConfirmDelete ? "CLICK AGAIN TO DELETE" : "DELETE SELECTED", rx, LIB_TOP + 34, rw,
+                libConfirmDelete, mx, my, true);
+        chip(g, font, LIB_COPY, "COPY WAND PLAN AS TEXT", rx, LIB_TOP + 60, rw, false, mx, my, true);
+        chip(g, font, LIB_PASTE, "PASTE PLAN FROM TEXT", rx, LIB_TOP + 77, rw, false, mx, my, true);
+        chip(g, font, LIB_FOLDER, "OPEN PLANS FOLDER", rx, LIB_TOP + 103, rw, false, mx, my, true);
+
+        g.drawString(font, "ON THE WAND", rx, LIB_TOP + 128, HudModel.DIM, false);
+        int wy = LIB_TOP + 139;
+        int wandShown = Math.min(plan.parts.size(), 6);
+        for (int i = 0; i < wandShown; i++) {
+            g.drawString(font, font.plainSubstrByWidth(describePart(i, plan.parts.get(i)), rw), rx, wy + i * 10, T.accent(),
+                    false);
+        }
+        if (plan.parts.size() > wandShown) {
+            g.drawString(font, "+" + (plan.parts.size() - wandShown) + " more parts", rx, wy + wandShown * 10, HudModel.DIM,
+                    false);
+        }
+
+        footer(g, font, 10, "Plans are saved as text files in blueprint/plans in your game folder. Copy as text shares one in "
+                + "chat; loading keeps the sizes, rotations, blocks, repeats and mirrors, but not pins.");
     }
 
     private void footer(GuiGraphics g, Font font, int textX, String hint) {
@@ -370,8 +520,9 @@ public final class BlueprintScreen extends Screen {
                     param.max(), 1, mx, my);
         }
         int hy = sy + 11 + 4 * 15 + 2;
-        chip(g, font, HOLLOW, spec.hollow ? "HOLLOW" : "SOLID", lx, hy, 64, spec.hollow, mx, my, false);
-        slider(g, font, WALL, "Wall", lx + 70, hy, 142, 32, spec.wall, 1, 16, 1, mx, my);
+        chip(g, font, HOLLOW, spec.hollow ? "HOLLOW" : "SOLID", lx, hy, 52, spec.hollow, mx, my, false);
+        chip(g, font, OPEN_ENDS, spec.open ? "OPEN" : "CLOSED", lx + 54, hy, 46, spec.hollow && spec.open, mx, my, false);
+        slider(g, font, WALL, "Wall", lx + 104, hy, 108, 28, spec.wall, 1, 16, 1, mx, my);
 
         // right column: how it is turned and where it sits
         int rx = 238;
@@ -438,8 +589,7 @@ public final class BlueprintScreen extends Screen {
 
         chip(g, font, UNDO, "UNDO", 10, H - 25, 44, false, mx, my, false);
         chip(g, font, RESET, "RESET", 58, H - 25, 44, false, mx, my, false);
-        chip(g, font, LIBRARY, "LIBRARY", 106, H - 25, 54, false, mx, my, false);
-        footer(g, font, 168, "Builds with the block in your other hand. Right-click builds, left-click undoes.");
+        footer(g, font, 112, "Builds with the block in your other hand. Right-click builds, left-click undoes.");
     }
 
     private void paintExport(GuiGraphics g, Font font, int mx, int my) {
@@ -927,7 +1077,13 @@ public final class BlueprintScreen extends Screen {
         if (button == 0) {
             double mx = localX(mouseX);
             double my = localY(mouseY);
-            if (!selection.exportMode && shapeMaxScroll > 0 && mx >= SHAPE_BAR_X - 3 && mx < SHAPE_BAR_X + 7 &&
+            if (libraryTab && libMaxScroll > 0 && mx >= LIB_BAR_X - 3 && mx < LIB_BAR_X + 7 && my >= LIB_TOP - 2 &&
+                    my < LIB_TOP - 2 + LIB_ROWS * LIB_ROW_H - 2) {
+                libBarDrag = true;
+                scrollLibraryTo(my);
+                return true;
+            }
+            if (!libraryTab && !selection.exportMode && shapeMaxScroll > 0 && mx >= SHAPE_BAR_X - 3 && mx < SHAPE_BAR_X + 7 &&
                     my >= SHAPE_TOP && my < SHAPE_TOP + SHAPE_ROWS * 15 - 3) {
                 shapeBarDrag = true;
                 scrollShapesTo(my);
@@ -945,6 +1101,16 @@ public final class BlueprintScreen extends Screen {
                 return true;
             }
         }
+        if (button == 1 && hasShiftDown() && !selection.exportMode && !libraryTab) {
+            double mx = localX(mouseX);
+            double my = localY(mouseY);
+            for (Control c : controls) {
+                if (c.id() == PART_BLOCK && c.contains(mx, my)) {
+                    WandEditor.partBlock("");
+                    return true;
+                }
+            }
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -952,6 +1118,10 @@ public final class BlueprintScreen extends Screen {
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (shapeBarDrag) {
             scrollShapesTo(localY(mouseY));
+            return true;
+        }
+        if (libBarDrag) {
+            scrollLibraryTo(localY(mouseY));
             return true;
         }
         if (dragging != null) {
@@ -965,6 +1135,7 @@ public final class BlueprintScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         dragging = null;
         shapeBarDrag = false;
+        libBarDrag = false;
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -974,6 +1145,12 @@ public final class BlueprintScreen extends Screen {
         double my = localY(mouseY);
         if (rulesPage && selection.exportMode && my >= RULES_TOP - 11 && my < H - 36) {
             rulesScroll = Math.max(0, rulesScroll - (int) Math.signum(scrollY) * 3);
+            return true;
+        }
+        if (libraryTab) {
+            if (my >= LIB_TOP - 2 && my < LIB_TOP + LIB_ROWS * LIB_ROW_H && mx >= 10 && mx < LIB_BAR_X + 7) {
+                libScroll = Mth.clamp(libScroll - (int) Math.signum(scrollY) * 2, 0, libMaxScroll);
+            }
             return true;
         }
         if (!selection.exportMode && shapeMaxScroll > 0 && mx >= 10 && mx < SHAPE_BAR_X + 7 && my >= SHAPE_TOP &&
@@ -1045,6 +1222,94 @@ public final class BlueprintScreen extends Screen {
         if (c.label() != null) status(c.label() + ": " + value, T.accent());
     }
 
+    private void libSave() {
+        String suggestion = libSelected.isEmpty() ? "my plan" : libSelected;
+        Minecraft.getInstance().setScreen(new NameInputScreen(this, "Save the wand's plan as", suggestion, 40, typed -> {
+            String name = PlanLibrary.cleanName(typed);
+            if (name.isEmpty()) {
+                status("A name needs letters or digits", HudModel.RED);
+                return;
+            }
+            try {
+                boolean replaced = PlanLibrary.exists(name);
+                PlanLibrary.save(name, plan);
+                libSelected = name;
+                libDirty = true;
+                libConfirmDelete = false;
+                status((replaced ? "Replaced " : "Saved ") + name, HudModel.GREEN);
+            } catch (java.io.IOException e) {
+                status("Could not save: " + e.getMessage(), HudModel.RED);
+            }
+        }));
+    }
+
+    private void libLoad() {
+        if (libSelected.isEmpty() || libPreview == null) {
+            status(libSelected.isEmpty() ? "Pick a plan in the list first" : "That plan could not be read", HudModel.RED);
+            return;
+        }
+        WandEditor.applyPlan(libPreview);
+        status("Loaded " + libSelected + " onto the wand (pins are not kept)", HudModel.GREEN);
+        libraryTab = false;
+        WandEditor.export(ShapeExportActions.SET_BUILD);
+    }
+
+    private void libDelete() {
+        if (libSelected.isEmpty()) {
+            status("Pick a plan in the list first", HudModel.RED);
+            return;
+        }
+        if (!libConfirmDelete) {
+            libConfirmDelete = true;
+            status("Click delete again to remove " + libSelected, HudModel.GOLD);
+            return;
+        }
+        try {
+            PlanLibrary.delete(libSelected);
+            status("Deleted " + libSelected, HudModel.GREEN);
+            libSelected = "";
+        } catch (java.io.IOException e) {
+            status("Could not delete: " + e.getMessage(), HudModel.RED);
+        }
+        libConfirmDelete = false;
+        libDirty = true;
+    }
+
+    private void libCopy() {
+        try {
+            Minecraft.getInstance().keyboardHandler.setClipboard(PlanLibrary.toShareString(plan));
+            status("Copied the wand's plan: paste it in chat or a file to share it", HudModel.GREEN);
+        } catch (java.io.IOException e) {
+            status("Could not copy the plan", HudModel.RED);
+        }
+    }
+
+    private void libPaste() {
+        try {
+            WandEditor.applyPlan(PlanLibrary.fromShareString(Minecraft.getInstance().keyboardHandler.getClipboard()));
+            status("Pasted: the wand has the plan (SAVE WAND PLAN keeps it)", HudModel.GREEN);
+            libraryTab = false;
+            WandEditor.export(ShapeExportActions.SET_BUILD);
+        } catch (java.io.IOException | com.mojang.brigadier.exceptions.CommandSyntaxException | IllegalArgumentException e) {
+            status("The clipboard does not hold a blueprint plan", HudModel.RED);
+        }
+    }
+
+    private void libFolder() {
+        try {
+            java.nio.file.Files.createDirectories(PlanLibrary.dir());
+            net.minecraft.Util.getPlatform().openFile(PlanLibrary.dir().toFile());
+        } catch (java.io.IOException e) {
+            status("Could not open the folder", HudModel.RED);
+        }
+    }
+
+    private void scrollLibraryTo(double my) {
+        int trackH = LIB_ROWS * LIB_ROW_H - 2;
+        double t = Mth.clamp((my - (LIB_TOP - 2) - libBarThumb / 2.0) / Math.max(1, trackH - libBarThumb), 0.0, 1.0);
+        libScroll = (int) Math.round(t * libMaxScroll);
+    }
+
     /** A button was clicked: light it, click, do it, and say what changed. */
     private void clicked(int id) {
         flashes.put(id, System.currentTimeMillis());
@@ -1060,6 +1325,7 @@ public final class BlueprintScreen extends Screen {
         String text = switch (id) {
             case MODE_BUILD -> "Build mode";
             case MODE_EXPORT -> "Export mode";
+            case LIB_TAB -> "Plan library";
             case X_STYLE, M_OUTPUT -> "Output: " + outputName(o);
             case X_CASE -> "Letters: " + (o.uppercaseFirst() ? "A-Z first" : "a-z first");
             case X_AIR -> "Air: " + airName(o);
@@ -1083,6 +1349,8 @@ public final class BlueprintScreen extends Screen {
             case M_CLEAR_TYPES -> "Recipe types cleared";
             case M_CLEAR_MODIFIERS -> "Recipe modifiers cleared";
             case HOLLOW -> spec.hollow ? "Hollow" : "Solid";
+            case OPEN_ENDS -> spec.open ? "Open: a hollow shape with no ends or base, like a pipe or tower (shapes with sides only)" :
+                    "Closed: a hollow shape keeps its ends";
             case SIT_ON_BASE -> "Sit on the base: " + (plan.sitOnBase ? "on" : "off");
             case CONNECTED -> "No diagonal gaps: " + (plan.connected ? "on" : "off");
             case OVERWRITE -> "Overwrite blocks: " + (plan.overwrite ? "on" : "off");
@@ -1090,7 +1358,7 @@ public final class BlueprintScreen extends Screen {
                     "Part follows the aim";
             case PIN_ALL -> plan.parts.stream().allMatch(part -> part.locked) ? "All parts pinned" : "Parts follow the aim";
             case PART_BLOCK -> spec.block.isEmpty() ? "This part builds from the block in your other hand: click to pick its own" :
-                    spec.block + " (shift-click to use the block in your other hand)";
+                    spec.block + " (shift + right-click to use the block in your other hand again)";
             case SEND_EXPORT -> "Selects the shape you just built and switches to export mode";
             case ARRAY_MODE -> switch (spec.arrayMode) {
                 case ShapeSpec.ARRAY_OFF -> "No repeats: click to repeat this part";
@@ -1115,6 +1383,15 @@ public final class BlueprintScreen extends Screen {
     }
 
     private void press(int id) {
+        if (id >= LIB_ROW && id < LIB_ROW + 200) {
+            int index = id - LIB_ROW;
+            if (index < libEntries.size()) {
+                libSelected = libEntries.get(index).name();
+                libConfirmDelete = false;
+                loadPreview();
+            }
+            return;
+        }
         if (id >= X_NUDGE && id < X_NUDGE + 6) {
             int axis = (id - X_NUDGE) / 2;
             int sign = (id - X_NUDGE) % 2 == 0 ? -1 : 1;
@@ -1139,24 +1416,37 @@ public final class BlueprintScreen extends Screen {
                 case ADD_PART -> WandEditor.send(WandEdits.ADD);
                 case REMOVE_PART -> WandEditor.send(WandEdits.REMOVE);
                 case HOLLOW -> WandEditor.setFlag(WandEdits.FLAG_HOLLOW, !spec.hollow);
+                case OPEN_ENDS -> WandEditor.setFlag(WandEdits.FLAG_OPEN, !spec.open);
                 case SIT_ON_BASE -> WandEditor.setFlag(WandEdits.FLAG_SIT_ON_BASE, !plan.sitOnBase);
                 case OVERWRITE -> WandEditor.setFlag(WandEdits.FLAG_OVERWRITE, !plan.overwrite);
                 case CONNECTED -> WandEditor.setFlag(WandEdits.FLAG_CONNECTED, !plan.connected);
-                case PART_BLOCK -> {
-                    if (hasShiftDown()) WandEditor.partBlock("");
-                    else WandPickers.pickPartBlock(this);
-                }
+                case PART_BLOCK -> WandPickers.pickPartBlock(this);
                 case SEND_EXPORT -> WandEditor.export(ShapeExportActions.SEND_TO_EXPORT);
                 case ARRAY_MODE -> WandEditor.setField(WandEdits.FIELD_ARRAY_MODE, spec.arrayMode + 1);
                 case MIRROR_X -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_X, !spec.mirrorX);
                 case MIRROR_Y -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_Y, !spec.mirrorY);
                 case MIRROR_Z -> WandEditor.setFlag(WandEdits.FLAG_MIRROR_Z, !spec.mirrorZ);
                 case ORIENT -> WandEditor.orient(Math.floorMod(plan.orient + 1, 3));
-                case LIBRARY -> Minecraft.getInstance().setScreen(new PlanLibraryScreen(this));
                 case UNDO -> WandEditor.send(WandEdits.UNDO);
                 case RESET -> WandEditor.send(WandEdits.RESET);
-                case MODE_BUILD -> WandEditor.export(ShapeExportActions.SET_BUILD);
-                case MODE_EXPORT -> WandEditor.export(ShapeExportActions.SET_EXPORT);
+                case MODE_BUILD -> {
+                    libraryTab = false;
+                    WandEditor.export(ShapeExportActions.SET_BUILD);
+                }
+                case MODE_EXPORT -> {
+                    libraryTab = false;
+                    WandEditor.export(ShapeExportActions.SET_EXPORT);
+                }
+                case LIB_TAB -> {
+                    libraryTab = true;
+                    libDirty = true;
+                }
+                case LIB_SAVE -> libSave();
+                case LIB_LOAD -> libLoad();
+                case LIB_DELETE -> libDelete();
+                case LIB_COPY -> libCopy();
+                case LIB_PASTE -> libPaste();
+                case LIB_FOLDER -> libFolder();
                 case X_CONTROLLER -> WandEditor.export(ShapeExportActions.TOGGLE_CONTROLLER);
                 case X_SELECT_BUILD -> WandEditor.export(ShapeExportActions.SELECT_BUILD);
                 case X_CLEAR -> WandEditor.export(ShapeExportActions.CLEAR);

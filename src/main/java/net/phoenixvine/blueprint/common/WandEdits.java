@@ -49,6 +49,7 @@ public final class WandEdits {
     public static final int FLAG_MIRROR_X = 4;
     public static final int FLAG_MIRROR_Y = 5;
     public static final int FLAG_MIRROR_Z = 6;
+    public static final int FLAG_OPEN = 7;
 
     public static final int FIELD_WALL = 0;
     public static final int FIELD_YAW = 1;
@@ -150,6 +151,7 @@ public final class WandEdits {
                 boolean value = buf.readBoolean();
                 switch (flag) {
                     case FLAG_HOLLOW -> spec.hollow = value;
+                    case FLAG_OPEN -> spec.open = value;
                     case FLAG_SIT_ON_BASE -> plan.sitOnBase = value;
                     case FLAG_OVERWRITE -> plan.overwrite = value;
                     case FLAG_CONNECTED -> plan.connected = value;
