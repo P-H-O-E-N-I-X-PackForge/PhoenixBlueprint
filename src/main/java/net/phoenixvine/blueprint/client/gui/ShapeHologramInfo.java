@@ -14,6 +14,6 @@ public final class ShapeHologramInfo {
     public static String summary() {
         if (tooBig) return "Too big (60,000 max)";
         String text = String.format("%,d blocks", blocks);
-        return haveBlock ? text : text + "  -  no block in hand";
+        return haveBlock ? text : text + " - no block";
     }
 }
