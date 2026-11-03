@@ -1,7 +1,5 @@
 package net.phoenixvine.blueprint.client;
 
-import com.gregtechceu.gtceu.client.mui.schema.MutableSchema;
-
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
 
 import net.minecraft.client.Minecraft;
@@ -9,24 +7,24 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.phoenixvine.blueprint.Blueprint;
+import net.phoenixvine.blueprint.client.render.GhostBlocks;
 import net.phoenixvine.blueprint.client.render.GhostRenderer;
 import net.phoenixvine.blueprint.common.export.C2SImportPlacePacket;
 import net.phoenixvine.blueprint.common.export.ImportResolver;
-
+import net.phoenixvine.blueprint.network.BlueprintNetwork;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * A pattern read from the clipboard, shown as a hologram where the wand is aimed (the controller's spot is a gold block) while
  * the wand is held. It can be turned in quarter turns and built. It lives on the client only until it is built.
  */
-@EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
 public final class ImportHologram {
 
     private static final int KEEP_ALIVE_TICKS = 4;
@@ -132,12 +130,17 @@ public final class ImportHologram {
         LocalPlayer player = Minecraft.getInstance().player;
         BlockPos anchor = position();
         if (player == null || placement == null || text == null || anchor == null) return false;
-        PacketDistributor.sendToServer(new C2SImportPlacePacket(text, anchor, front(player).get3DDataValue()));
+
+        BlueprintNetwork.CHANNEL.sendToServer(new C2SImportPlacePacket(text, anchor, front(player).get3DDataValue()));
+
         return true;
     }
 
     @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        // 1.20.1 uses Phase.END instead of TickEvent.ClientTickEvent.Post
+        if (event.phase != TickEvent.Phase.END) return;
+
         RENDERER.clientTick();
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
@@ -152,7 +155,7 @@ public final class ImportHologram {
         Direction front = front(player);
         if (!showing || placement != builtFor || front != builtFront) {
             Long2ReferenceMap<BlockState> blocks = placement.offsets(front);
-            RENDERER.showPreview(anchor, new MutableSchema(blocks), true, KEEP_ALIVE_TICKS);
+            RENDERER.showPreview(anchor, new GhostBlocks(blocks), true, KEEP_ALIVE_TICKS);
             builtFor = placement;
             builtFront = front;
             showing = true;
@@ -165,7 +168,15 @@ public final class ImportHologram {
     @SubscribeEvent
     public static void onRenderWorld(RenderLevelStageEvent event) {
         Minecraft mc = Minecraft.getInstance();
-        RENDERER.draw(event.getPoseStack(), event.getModelViewMatrix(), mc.renderBuffers().bufferSource(),
-                mc.gameRenderer.getMainCamera(), event.getStage(), mc.getTimer().getGameTimeDeltaPartialTick(false));
+        float partialTick = mc.getPartialTick();
+
+        RENDERER.draw(
+                event.getPoseStack(),
+                event.getProjectionMatrix(),
+                mc.renderBuffers().bufferSource(),
+                mc.gameRenderer.getMainCamera(),
+                event.getStage(),
+                partialTick
+        );
     }
 }

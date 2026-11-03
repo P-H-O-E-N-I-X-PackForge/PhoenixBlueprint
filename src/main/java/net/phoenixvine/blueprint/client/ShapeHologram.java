@@ -1,7 +1,5 @@
 package net.phoenixvine.blueprint.client;
 
-import com.gregtechceu.gtceu.client.mui.schema.MutableSchema;
-
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -12,15 +10,15 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.phoenixvine.blueprint.Blueprint;
 import net.phoenixvine.blueprint.client.gui.ShapeHologramInfo;
+import net.phoenixvine.blueprint.client.render.GhostBlocks;
 import net.phoenixvine.blueprint.client.render.GhostRenderer;
 import net.phoenixvine.blueprint.common.C2SShapeUndoPacket;
 import net.phoenixvine.blueprint.common.BlockOrienter;
@@ -34,6 +32,7 @@ import it.unimi.dsi.fastutil.longs.Long2ByteMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongIterator;
+import net.phoenixvine.blueprint.network.BlueprintNetwork;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -41,7 +40,7 @@ import org.jetbrains.annotations.Nullable;
  * one) where you are aiming. It is rebuilt only when the plan or the block changes; moving the aim only moves it. While the
  * editor is open it stays where it was last aimed so you can watch it change.
  */
-@EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
 public final class ShapeHologram {
 
     private static final int KEEP_ALIVE_TICKS = 4;
@@ -71,7 +70,12 @@ public final class ShapeHologram {
     }
 
     @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
+    public static void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+        // Ensure it only runs at the end of the tick to avoid double-processing
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END) {
+            return;
+        }
+
         FREE.clientTick();
         PINNED.clientTick();
 
@@ -177,7 +181,7 @@ public final class ShapeHologram {
                     BlockPos.getY(cell) - origin.getY(), BlockPos.getZ(cell) - origin.getZ());
             blocks.put(key, PartBlocks.tableFor(tables, owners.get(cell)).get(orientation.get(cell)));
         }
-        renderer.showPreview(at, new MutableSchema(blocks), valid, KEEP_ALIVE_TICKS);
+        renderer.showPreview(at, new GhostBlocks(blocks), valid, KEEP_ALIVE_TICKS);
         return true;
     }
 
@@ -207,8 +211,14 @@ public final class ShapeHologram {
     public static void onRenderWorld(RenderLevelStageEvent event) {
         Minecraft mc = Minecraft.getInstance();
         for (GhostRenderer renderer : new GhostRenderer[] { FREE, PINNED }) {
-            renderer.draw(event.getPoseStack(), event.getModelViewMatrix(), mc.renderBuffers().bufferSource(),
-                    mc.gameRenderer.getMainCamera(), event.getStage(), mc.getTimer().getGameTimeDeltaPartialTick(false));
+            renderer.draw(
+                    event.getPoseStack(),
+                    event.getPoseStack().last().pose(), // Model-view matrix from pose stack
+                    mc.renderBuffers().bufferSource(),
+                    event.getCamera(),
+                    event.getStage(),
+                    event.getPartialTick() // Native event partial tick
+            );
         }
     }
 
@@ -216,7 +226,7 @@ public final class ShapeHologram {
     @SubscribeEvent
     public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
         if (event.getItemStack().getItem() instanceof BlueprintWandItem) {
-            PacketDistributor.sendToServer(new C2SShapeUndoPacket());
+            BlueprintNetwork.CHANNEL.sendToServer(new C2SShapeUndoPacket());
         }
     }
 }

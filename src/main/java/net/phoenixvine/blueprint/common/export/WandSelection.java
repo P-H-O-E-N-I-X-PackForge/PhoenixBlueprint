@@ -48,7 +48,9 @@ public final class WandSelection {
     public boolean exportMode = false;
     /** True while a right click on a block marks the controller instead of a corner. */
     public boolean controllerMode = false;
-    public KubeJsExport.Options options = KubeJsExport.Options.DEFAULT;
+    /** Written the way the installed GregTech names things until changed (see {@link net.phoenixvine.blueprint.common.GtLine}). */
+    public KubeJsExport.Options options = KubeJsExport.Options.DEFAULT
+            .withGt7(net.phoenixvine.blueprint.common.GtLine.legacy());
 
     /** Writes the fields back to the structure being edited. */
     private void commit() {
@@ -166,7 +168,8 @@ public final class WandSelection {
                 !tag.contains("parts") || tag.getBoolean("parts"),
                 tag.contains("style") ? KubeJsExport.validStyle(tag.getInt("style")) :
                         tag.getBoolean("full") ? KubeJsExport.STYLE_FULL : KubeJsExport.STYLE_FRAGMENT,
-                tag.getBoolean("java"), tag.getBoolean("gt7"));
+                tag.getBoolean("java"),
+                tag.contains("gt7") ? tag.getBoolean("gt7") : net.phoenixvine.blueprint.common.GtLine.legacy());
         return s;
     }
 

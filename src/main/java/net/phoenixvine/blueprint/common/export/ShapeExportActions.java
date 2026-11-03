@@ -6,8 +6,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 
+import net.phoenixvine.blueprint.network.BlueprintNetwork;
 import org.jetbrains.annotations.Nullable;
-import net.neoforged.neoforge.network.PacketDistributor;
+
 import net.phoenixvine.blueprint.common.ShapeActions;
 
 /** What the blueprint wand does on the server in export mode: marks the selection, copies it as KubeJS, changes how it is written. */
@@ -321,7 +322,10 @@ public final class ShapeExportActions {
             return;
         }
         String fileName = (machine ? settings.id() : "pattern") + (sel.options.java() ? ".java" : ".js");
-        PacketDistributor.sendToPlayer(player, new S2CShapeExportPacket(text.toString(), fileName));
+        BlueprintNetwork.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+                new S2CShapeExportPacket(text.toString(), fileName)
+        );
         say(player, (ready.size() > 1 ? "Copied " + ready.size() + " structures" : "Copied blocks") +
                 (turned ? ", turned to face the controller." : "."), ChatFormatting.AQUA);
     }

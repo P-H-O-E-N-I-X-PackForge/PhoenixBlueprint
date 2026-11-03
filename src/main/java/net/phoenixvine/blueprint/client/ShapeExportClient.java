@@ -19,15 +19,17 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
-import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.network.PacketDistributor;
 import net.phoenixvine.blueprint.Blueprint;
+import net.phoenixvine.blueprint.network.BlueprintNetwork;
 import net.phoenixvine.blueprint.common.BlueprintWandItem;
 import net.phoenixvine.blueprint.common.export.C2SBlueprintWandActionPacket;
 import net.phoenixvine.blueprint.common.export.ShapeExportActions;
@@ -44,7 +46,7 @@ import java.nio.file.StandardOpenOption;
  * The client side of the wand's export mode: the selection boxes in the world, the info above the hotbar, the three keys
  * and putting the copied KubeJS on the clipboard.
  */
-@EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
 public final class ShapeExportClient {
 
     private static final String CATEGORY = "key.categories.phoenix_blueprint";
@@ -65,42 +67,46 @@ public final class ShapeExportClient {
     private ShapeExportClient() {}
 
     @SubscribeEvent
-    public static void registerKeys(RegisterKeyMappingsEvent event) {
-        event.register(MODE_KEY);
-        event.register(CONTROLLER_KEY);
-        event.register(COPY_KEY);
-        event.register(LOCK_KEY);
+    public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Post event) {
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && !mc.options.hideGui) {
+            renderHud(event.getGuiGraphics());
+        }
     }
 
     @SubscribeEvent
-    public static void registerLayers(RegisterGuiLayersEvent event) {
-        event.registerAboveAll(Blueprint.id("blueprint_wand_export"), (graphics, deltaTracker) -> renderHud(graphics));
-    }
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        // 1.20.1 uses Phase.END instead of TickEvent.ClientTickEvent.Post
+        if (event.phase != TickEvent.Phase.END) return;
 
-    @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         boolean holding = mc.player != null && wand(mc.player) != null;
         if (holding) updateDerivedCasing(mc);
+
         while (MODE_KEY.consumeClick()) {
-            if (holding) PacketDistributor.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.TOGGLE_MODE));
+            if (holding) {
+                BlueprintNetwork.CHANNEL.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.TOGGLE_MODE));
+            }
         }
         while (CONTROLLER_KEY.consumeClick()) {
             if (holding) {
-                PacketDistributor.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.TOGGLE_CONTROLLER));
+                BlueprintNetwork.CHANNEL.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.TOGGLE_CONTROLLER));
             }
         }
         while (LOCK_KEY.consumeClick()) {
             if (holding) lockSelected(mc);
         }
         while (COPY_KEY.consumeClick()) {
-            if (holding) PacketDistributor.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.COPY));
+            if (holding) {
+                BlueprintNetwork.CHANNEL.sendToServer(new C2SBlueprintWandActionPacket(ShapeExportActions.COPY));
+            }
         }
     }
 
     /** Whether Phantasia is installed, so the selection can be previewed in its 3D viewer. */
     public static boolean phantasiaAvailable() {
-        return net.neoforged.fml.ModList.get().isLoaded("phantasia");
+        return ModList.get().isLoaded("phantasia");
     }
 
     /** Opens the structure in Phantasia's viewer as if it were a registered multiblock. */
@@ -209,9 +215,12 @@ public final class ShapeExportClient {
             Files.writeString(path, text, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
             mc.keyboardHandler.setClipboard("Data saved to: " + path.toAbsolutePath());
-            mc.getToasts().addToast(new SystemToast(SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+            net.minecraft.client.gui.components.toasts.SystemToast.add(
+                    mc.getToasts(),
+                    net.minecraft.client.gui.components.toasts.SystemToast.SystemToastIds.PERIODIC_NOTIFICATION,
                     Component.literal("Blueprint Wand"),
-                    Component.literal("The selection was too big for the clipboard; its file path was copied instead")));
+                    Component.literal("The selection was too big for the clipboard; its file path was copied instead")
+            );
         } catch (Exception e) {
             mc.keyboardHandler.setClipboard(text.substring(0, MAX_CLIPBOARD));
         }
@@ -221,7 +230,7 @@ public final class ShapeExportClient {
 
     /** Where every export is also written, newest last: blueprint/exports in the game folder. */
     public static Path exportsDir() {
-        return net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("blueprint").resolve("exports");
+        return FMLPaths.GAMEDIR.get().resolve("blueprint").resolve("exports");
     }
 
     /** Writes an export to the exports folder (keeping the newest few) and returns its path from the game folder, or null. */
@@ -269,7 +278,7 @@ public final class ShapeExportClient {
         int x = 8;
         int y = g.guiHeight() / 2 - 30;
         g.drawString(mc.font, "[" + sel.name() + "] " + (sel.controllerMode ?
-                "marking the CONTROLLER (sneak + click unmarks)" : "marking corners (sneak = corner 1)"), x, y,
+                        "marking the CONTROLLER (sneak + click unmarks)" : "marking corners (sneak = corner 1)"), x, y,
                 0xFFAA00, true);
         y += 12;
         g.drawString(mc.font, "Corner 1: " + text(sel.corner1), x, y, 0xFFFFFF, true);
@@ -281,7 +290,7 @@ public final class ShapeExportClient {
             BlockPos high = sel.high();
             int sx = high.getX() - low.getX() + 1, sy = high.getY() - low.getY() + 1, sz = high.getZ() - low.getZ() + 1;
             g.drawString(mc.font, "Size: " + sx + "x" + sy + "x" + sz + "   Blocks: " + (long) sx * sy * sz +
-                    "   Copy: right-click air or " + COPY_KEY.getTranslatedKeyMessage().getString(), x, y + 32,
+                            "   Copy: right-click air or " + COPY_KEY.getTranslatedKeyMessage().getString(), x, y + 32,
                     0xFFFFFF, true);
         }
     }

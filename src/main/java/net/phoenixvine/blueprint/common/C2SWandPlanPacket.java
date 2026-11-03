@@ -1,15 +1,14 @@
 package net.phoenixvine.blueprint.common;
 
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraftforge.network.NetworkEvent;
 import net.phoenixvine.blueprint.Blueprint;
+
+import java.util.function.Supplier;
 
 /**
  * Replaces the plan on the wand in the player's hand with a whole one (loaded from the plan library or pasted). The plan is
@@ -17,15 +16,14 @@ import net.phoenixvine.blueprint.Blueprint;
  * which keeps every size, angle and offset within its limits, so what a file or a client sends cannot make a plan the
  * editor could not.
  */
-public record C2SWandPlanPacket(CompoundTag plan) implements CustomPacketPayload {
+public record C2SWandPlanPacket(CompoundTag plan) {
 
-    public static final Type<C2SWandPlanPacket> TYPE = new Type<>(Blueprint.id("wand_plan"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, C2SWandPlanPacket> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.COMPOUND_TAG, C2SWandPlanPacket::plan, C2SWandPlanPacket::new);
+    public static void encode(C2SWandPlanPacket packet, FriendlyByteBuf buf) {
+        buf.writeNbt(packet.plan());
+    }
 
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    public static C2SWandPlanPacket decode(FriendlyByteBuf buf) {
+        return new C2SWandPlanPacket(buf.readNbt());
     }
 
     /** Puts the plan on the wand stack: what the server does, and what the editor does to its own copy at once. */
@@ -34,9 +32,12 @@ public record C2SWandPlanPacket(CompoundTag plan) implements CustomPacketPayload
         ShapePlan.load(plan).write(stack);
     }
 
-    public static void handle(C2SWandPlanPacket packet, IPayloadContext ctx) {
+    public static void handle(C2SWandPlanPacket packet, Supplier<NetworkEvent.Context> ctxSupplier) {
+        NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.enqueueWork(() -> {
-            if (!(ctx.player() instanceof ServerPlayer player) || !ShapeActions.mayUse(player)) return;
+            ServerPlayer player = ctx.getSender();
+            if (player == null || !ShapeActions.mayUse(player)) return;
+
             for (InteractionHand hand : InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
                 if (stack.getItem() instanceof BlueprintWandItem) {
@@ -45,5 +46,6 @@ public record C2SWandPlanPacket(CompoundTag plan) implements CustomPacketPayload
                 }
             }
         });
+        ctx.setPacketHandled(true);
     }
 }

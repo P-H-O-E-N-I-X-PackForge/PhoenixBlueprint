@@ -1,34 +1,38 @@
 package net.phoenixvine.blueprint.common;
 
 import io.netty.buffer.Unpooled;
-
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.minecraftforge.network.NetworkEvent;
 import net.phoenixvine.blueprint.Blueprint;
 
+import java.util.function.Supplier;
+
 /** One editor change to the wand in the player's hand: see {@link WandEdits}. */
-public record C2SWandEditPacket(int op, byte[] data) implements CustomPacketPayload {
+public record C2SWandEditPacket(int op, byte[] data) {
 
-    public static final Type<C2SWandEditPacket> TYPE = new Type<>(Blueprint.id("wand_edit"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, C2SWandEditPacket> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.VAR_INT, C2SWandEditPacket::op, ByteBufCodecs.byteArray(512), C2SWandEditPacket::data,
-            C2SWandEditPacket::new);
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    // Encoder for FriendlyByteBuf
+    public static void encode(C2SWandEditPacket packet, FriendlyByteBuf buf) {
+        buf.writeVarInt(packet.op());
+        buf.writeByteArray(packet.data());
     }
 
-    public static void handle(C2SWandEditPacket packet, IPayloadContext ctx) {
+    // Decoder for FriendlyByteBuf
+    public static C2SWandEditPacket decode(FriendlyByteBuf buf) {
+        int op = buf.readVarInt();
+        byte[] data = buf.readByteArray(512); // Respects your max length constraint
+        return new C2SWandEditPacket(op, data);
+    }
+
+    // Server-side network handler using 1.20.1 NetworkEvent.Context
+    public static void handle(C2SWandEditPacket packet, Supplier<NetworkEvent.Context> ctxSupplier) {
+        NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.enqueueWork(() -> {
-            if (!(ctx.player() instanceof ServerPlayer player)) return;
+            ServerPlayer player = ctx.getSender();
+            if (player == null) return;
+
             for (InteractionHand hand : InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
                 if (stack.getItem() instanceof BlueprintWandItem) {
@@ -37,5 +41,6 @@ public record C2SWandEditPacket(int op, byte[] data) implements CustomPacketPayl
                 }
             }
         });
+        ctx.setPacketHandled(true);
     }
 }

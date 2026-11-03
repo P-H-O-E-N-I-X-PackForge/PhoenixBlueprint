@@ -2,15 +2,15 @@ package net.phoenixvine.blueprint.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.InteractionHand;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.phoenixvine.blueprint.Blueprint;
 import net.phoenixvine.blueprint.client.gui.BlueprintScreen;
 
 /** Client-only entry points the common item code calls, and the server's action-bar messages routed into the editor. */
-@EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Blueprint.MOD_ID, value = Dist.CLIENT)
 public final class ClientHooks {
 
     private ClientHooks() {}

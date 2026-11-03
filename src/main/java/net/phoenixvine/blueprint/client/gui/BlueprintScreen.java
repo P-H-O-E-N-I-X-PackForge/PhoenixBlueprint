@@ -283,7 +283,6 @@ public final class BlueprintScreen extends Screen {
             onClose();
             return;
         }
-        renderBackground(g, mouseX, mouseY, partialTick);
         Font font = Minecraft.getInstance().font;
         controls.clear();
         tooltip = null;
@@ -316,7 +315,12 @@ public final class BlueprintScreen extends Screen {
             String summary = ShapeHologramInfo.summary();
             int summaryColor = ShapeHologramInfo.tooBig ? HudModel.RED :
                     ShapeHologramInfo.haveBlock ? HudModel.GREEN : HudModel.GOLD;
-            g.drawString(font, summary, W - 10 - font.width(summary), 8, summaryColor, false);
+            // the mode chips end at x=242, so the summary gets what is left of the header and is cut to fit
+            String full = ShapeHologramInfo.fullSummary();
+            summary = font.plainSubstrByWidth(summary, W - 10 - 246);
+            int summaryX = W - 10 - font.width(summary);
+            g.drawString(font, summary, summaryX, 8, summaryColor, false);
+            if (!ShapeHologramInfo.haveBlock && isOver(mx, my, summaryX, 6, font.width(summary), 11)) tooltip = full;
             paintBuild(g, font, mx, my);
         } else if (machinePage) {
             paintMachine(g, font, mx, my);
@@ -678,7 +682,7 @@ public final class BlueprintScreen extends Screen {
         y += chip(g, font, X_STYLE, "Output: " + outputName(o), 10, y, lw, false, mx, my, true) + 3;
         y += chip(g, font, X_LANGUAGE, "Language: " + (o.java() ? "Java (registry fields)" : "KubeJS"), 10, y, lw,
                 o.java(), mx, my, true) + 3;
-        y += chip(g, font, X_VERSION, "GregTech: " + (o.gt7() ? "7 (1.20.1, .aisle)" : "8 (1.21.1, .slice)"), 10, y, lw,
+        y += chip(g, font, X_VERSION, "GregTech: " + (o.gt7() ? "7 / 8.0 release (.aisle)" : "8 snapshot (.slice)"), 10, y, lw,
                 o.gt7(), mx, my, true) + 3;
 
         y += 4;
@@ -1140,34 +1144,35 @@ public final class BlueprintScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         double mx = localX(mouseX);
         double my = localY(mouseY);
-        if (rulesPage && selection.exportMode && my >= RULES_TOP - 11 && my < H - 36) {
-            rulesScroll = Math.max(0, rulesScroll - (int) Math.signum(scrollY) * 3);
+
+        if (rulesPage && selection.exportMode && my >= RULES_TOP + 11 && my < H - 36) {
+            rulesScroll = Math.max(0, rulesScroll - (int) Math.signum(delta) * 3);
             return true;
         }
         if (libraryTab) {
-            if (my >= LIB_TOP - 2 && my < LIB_TOP + LIB_ROWS * LIB_ROW_H && mx >= 10 && mx < LIB_BAR_X + 7) {
-                libScroll = Mth.clamp(libScroll - (int) Math.signum(scrollY) * 2, 0, libMaxScroll);
+            if (my >= LIB_TOP + 2 && my < LIB_TOP + LIB_ROWS * LIB_ROW_H && mx >= 10 && mx < LIB_BAR_X + 7) {
+                libScroll = Mth.clamp(libScroll - (int) Math.signum(delta) * 2, 0, libMaxScroll);
             }
             return true;
         }
         if (!selection.exportMode && shapeMaxScroll > 0 && mx >= 10 && mx < SHAPE_BAR_X + 7 && my >= SHAPE_TOP &&
                 my < SHAPE_TOP + SHAPE_ROWS * 15) {
-            shapeScroll = Mth.clamp(shapeScroll - (int) Math.signum(scrollY), 0, shapeMaxScroll);
+            shapeScroll = Mth.clamp(shapeScroll - (int) Math.signum(delta), 0, shapeMaxScroll);
             return true;
         }
         for (Control c : controls) {
             if (!c.contains(mx, my)) continue;
-            int direction = scrollY > 0 ? 1 : -1;
+            int direction = delta > 0 ? 1 : -1;
             if (c.kind() == Kind.SLIDER) {
                 int step = c.step() * (hasShiftDown() ? 3 : 1);
                 applySlider(c, Mth.clamp(current(c.id()) + direction * step, c.min(), c.max()));
                 return true;
             }
         }
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
     /** Scrolls the shape list so the bar's thumb is centred on the mouse. */
@@ -1331,7 +1336,7 @@ public final class BlueprintScreen extends Screen {
             case X_AIR -> "Air: " + airName(o);
             case X_PARTS -> "Hatches and buses: " + (o.partsAsAbilities() ? "as abilities" : "exact blocks");
             case X_LANGUAGE -> "Language: " + (o.java() ? "Java" : "KubeJS");
-            case X_VERSION -> "GregTech " + (o.gt7() ? "7 (.aisle)" : "8 (.slice)");
+            case X_VERSION -> "GregTech " + (o.gt7() ? "7 / 8.0 (.aisle)" : "8 snapshot (.slice)");
             case X_CONTROLLER -> selection.controllerMode ? "Right-click a block to mark the controller" :
                     "Right-click a block to set corners";
             case X_CLEAR -> "Selection cleared";

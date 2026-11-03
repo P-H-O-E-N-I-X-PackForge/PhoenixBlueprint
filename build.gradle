@@ -1,20 +1,87 @@
+buildscript {
+    repositories {
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        mavenCentral()
+    }
+}
+
 plugins {
-    id 'java-library'
     id 'idea'
+    id 'eclipse'
     id 'maven-publish'
-    id 'net.neoforged.moddev' version '2.0.143'
+    id 'net.neoforged.moddev.legacyforge' version '2.0.91'
 }
 
 version = mod_version
-group = mod_group_id
+group = maven_group
 
-tasks.named('wrapper', Wrapper).configure {
-    distributionType = Wrapper.DistributionType.BIN
+base {
+    archivesName = 'phoenix-blueprint-forge'
 }
+
+java {
+    sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17
+}
+
+legacyForge {
+    version = "${minecraft_version}-${forge_version}"
+
+    runs {
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+        client {
+            client()
+            sourceSet = sourceSets.main
+            programArguments.addAll('--username', 'Phoenixvine')
+        }
+        server {
+            server()
+            sourceSet = sourceSets.main
+            programArguments.add('--nogui')
+        }
+        data {
+            data()
+            sourceSet = sourceSets.main
+            programArguments.addAll(
+                    '--mod', mod_id,
+                    '--all',
+                    '--output', file('src/generated/resources/').getAbsolutePath(),
+                    '--existing', file('src/main/resources/').getAbsolutePath()
+            )
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
     mavenLocal()
     mavenCentral()
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org'
+    }
+    exclusiveContent {
+        forRepositories(
+                maven { url = 'https://repo.repsy.io/mvn/toma/public/' },
+                maven { url = 'https://api.repsy.io/mvn/toma/public' }
+        )
+        filter { includeGroup('dev.toma.configuration') }
+    }
+
+    // -> ADD THIS: Required for your Phantasia core/forge mods
+    maven {
+        name = 'Repsy'
+        url = uri('https://repo.repsy.io/mvn/user75142941/phoenixsuite')
+    }
     maven {
         name = 'GTCEu Maven'
         url = 'https://maven.gtceu.com/'
@@ -31,22 +98,30 @@ repositories {
         }
     }
     maven {
-        name = 'ParchmentMC'
-        url = 'https://maven.parchmentmc.org'
-    }
-    maven {
         name = 'Devos Snapshot Maven'
         url = 'https://mvn.devos.one/snapshots/'
         content {
             includeGroup 'com.tterrag.registrate'
         }
     }
-    exclusiveContent { // Configuration
+    exclusiveContent {
         forRepositories(
                 maven { url = 'https://repo.repsy.io/mvn/toma/public/' },
                 maven { url = 'https://api.repsy.io/mvn/toma/public' }
         )
         filter { includeGroup('dev.toma.configuration') }
+    }
+    maven { // LDLib
+        url = "https://maven.firstdark.dev/snapshots/"
+        content {
+            includeGroup("com.lowdragmc.ldlib")
+        }
+    }
+    maven { // Registrate
+        url = "https://maven.tterrag.com/"
+        content {
+            includeGroup("com.tterrag.registrate")
+        }
     }
     maven {
         name = 'Repsy'
@@ -54,69 +129,36 @@ repositories {
     }
 }
 
-base {
-    archivesName = 'phoenix-blueprint-neoforge'
-}
-
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-
-neoForge {
-    version = project.neo_version
-
-    parchment {
-        mappingsVersion = project.parchment_mappings_version
-        minecraftVersion = project.parchment_minecraft_version
-    }
-
-    runs {
-        client {
-            client()
-            programArguments.addAll '--username', 'Phoenixvine'
-        }
-        server {
-            server()
-            programArgument '--nogui'
-        }
-
-        configureEach {
-            systemProperty 'neoforge.logging.markers', 'REGISTRIES'
-            logLevel = org.slf4j.event.Level.DEBUG
-        }
-    }
-
-    mods {
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
-        }
-    }
-}
-
-configurations {
-    runtimeClasspath.extendsFrom localRuntime
-}
-
-// NeoForge ships its own mixin; keep the original off the classpath (FML would see two modules)
-configurations.configureEach {
-    exclude group: 'org.spongepowered', module: 'mixin'
-}
-
 dependencies {
-    compileOnly 'org.jetbrains:annotations:26.0.2'
+    compileOnly 'org.jetbrains:annotations:24.0.0'
 
-    // GregTech Modern (required: the exporter is for its machines) and what it is built on
-    implementation("com.gregtechceu.gtceu:gtceu-${minecraft_version}:${gtm_version}") { transitive = false }
-    implementation("brachy.modularui:modularui-mc${minecraft_version}:${mui_version}") { transitive = false }
-    implementation "com.tterrag.registrate:Registrate:${registrate_version}"
-    implementation "dev.toma.configuration:configuration-${minecraft_version}:${configuration_version}"
+    // GregTech comes in two API lines on 1.20.1: 7.x (and the 8.0 release) with LDLib, and the 8.0.0-SNAPSHOT builds with
+    // ModularUI. Blueprint uses only what both have (and reflection for the rest), so it is compiled against the older line
+    // and runs with either: ./gradlew runClient (7.x), ./gradlew runClient -Pgtm=8 (the snapshot), -Pgtm=8.0.0 (the release).
+    def gtmCompile = project.findProperty('gtmcompile') ?: gtceu_version
+    def gtmRun = project.findProperty('gtm') == '8' ? gtceu8_version : (project.findProperty('gtm') ?: gtceu_version)
+    modCompileOnly("com.gregtechceu.gtceu:gtceu-${minecraft_version}:${gtmCompile}:slim") { transitive = false }
+    modRuntimeOnly("com.gregtechceu.gtceu:gtceu-${minecraft_version}:${gtmRun}:slim") { transitive = false }
+    modCompileOnly("com.lowdragmc.ldlib:ldlib-forge-${minecraft_version}:${ldlib_version}") { transitive = false }
+    modRuntimeOnly("com.lowdragmc.ldlib:ldlib-forge-${minecraft_version}:${ldlib_version}") { transitive = false }
+    if (gtmRun == gtceu8_version) {
+        modRuntimeOnly("brachy.modularui:modularui-mc${minecraft_version}:${mui_version}") { transitive = false }
+    }
+    modImplementation("com.tterrag.registrate:Registrate:${registrate_version}")
+    modRuntimeOnly("curse.maven:configuration-444699:5840405")
+    modCompileOnly("curse.maven:configuration-444699:5840405")
 
-    // Phantasia: the 3D viewer for the preview. Compile only; the preview class is only used when it is installed.
-    compileOnly("net.phoenix.core:phantasia_neoforge:${phantasia_version}") { transitive = false }
-    if (!project.hasProperty('noPhantasia')) runtimeOnly("net.phoenix.core:phantasia_neoforge:${phantasia_version}") { transitive = false }
+    // Phantasia 3D viewer (from local/Repsy)
+    modCompileOnly("curse.maven:phantasia-1589286:9379122")
+    if (!project.hasProperty('noPhantasia')) {
+        modRuntimeOnly("curse.maven:phantasia-1589286:9379122")
+    }
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    runtimeOnly ("curse.maven:phoenix-excavate-1624778:9379699")
+    modRuntimeOnly("curse.maven:phoenix-excavate-1624778:9379699")
+    modRuntimeOnly("net.phoenixvine.wiki:phoenix_wiki:0.6.0")
 }
 
 sourceSets {
@@ -133,32 +175,33 @@ tasks.named('test', Test).configure {
 tasks.named('processResources', ProcessResources).configure {
     var replaceProperties = [
             minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version            : neo_version,
-            loader_version_range   : loader_version_range,
+            minecraft_version_range: '[1.20.1,1.21)',
+            forge_version          : forge_version,
+            loader_version_range   : '[47,)',
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
             mod_version            : mod_version,
-            mod_authors            : mod_authors,
+            mod_author             : mod_author,
             mod_description        : mod_description,
             gtm_version_min        : gtm_version_min,
     ]
     inputs.properties replaceProperties
-    filesMatching('META-INF/neoforge.mods.toml') {
+    filesMatching('META-INF/mods.toml') {
         expand replaceProperties
     }
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+    options.release.set(17)
 }
 
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
             groupId = project.group
-            artifactId = 'phoenix-blueprint-neoforge'
+            artifactId = 'phoenix-blueprint-forge'
             version = project.version
             from components.java
         }

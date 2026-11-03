@@ -6,35 +6,35 @@ license = "${mod_license}"
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
-authors = "${mod_authors}"
+authors = "${mod_author}"
 description = '''
 ${mod_description}
 '''
 
 [[dependencies.${mod_id}]]
-modId = "neoforge"
-type = "required"
-versionRange = "[${neo_version},)"
+modId = "forge"
+mandatory = true
+versionRange = "[${forge_version},)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "gtceu"
-type = "required"
+mandatory = true
 versionRange = "[${gtm_version_min},)"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies.${mod_id}]]
 modId = "phantasia"
-type = "optional"
-versionRange = "[5.0.0,)"
+mandatory = false
+versionRange = "[4.0.0,)"
 ordering = "NONE"
 side = "CLIENT"

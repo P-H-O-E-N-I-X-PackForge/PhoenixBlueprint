@@ -111,6 +111,10 @@ public final class KubeJsExport {
             return new Options(uppercaseFirst, air, partsAsAbilities, style, java, gt7);
         }
 
+        public Options withGt7(boolean gt7) {
+            return new Options(uppercaseFirst, air, partsAsAbilities, style, java, gt7);
+        }
+
         public Options toggleVersion() {
             return new Options(uppercaseFirst, air, partsAsAbilities, style, java, !gt7);
         }
@@ -418,9 +422,17 @@ public final class KubeJsExport {
             "com.gregtechceu.gtceu.api.data.RotationState",
             "com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition",
             "com.gregtechceu.gtceu.api.machine.multiblock.PartAbility",
-            "com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine",
+            "com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine"
+    };
+
+    /** The imports of the two GregTech API lines on 1.20.1: the older (7.x, 8.0 release) and the newer (8.0 snapshots). */
+    private static final String[] PATTERN_IMPORTS_LEGACY = {
+            "com.gregtechceu.gtceu.api.pattern.Predicates",
+            "com.gregtechceu.gtceu.api.pattern.FactoryBlockPattern"
+    };
+    private static final String[] PATTERN_IMPORTS_NEW = {
             "com.gregtechceu.gtceu.api.multiblock.Predicates",
-            "com.gregtechceu.gtceu.api.registry.registrate.entry.MachineEntry"
+            "com.gregtechceu.gtceu.api.multiblock.pattern.MultiblockPatternBuilder"
     };
 
     private static String identifier(String id, boolean java, Set<String> imports) {
@@ -526,7 +538,9 @@ public final class KubeJsExport {
         StringBuilder out = new StringBuilder();
         if (java) {
             for (String i : MACHINE_IMPORTS_JAVA) imports.add(i);
-            out.append("public static final MachineEntry<MultiblockMachineDefinition> ").append(m.constantName())
+            for (String i : o.gt7() ? PATTERN_IMPORTS_LEGACY : PATTERN_IMPORTS_NEW) imports.add(i);
+            // on 1.20.1 register() gives the definition itself (there is no MachineEntry)
+            out.append("public static final MultiblockMachineDefinition ").append(m.constantName())
                     .append(" = REGISTRATE\n        .multiblock(\"").append(m.id())
                     .append("\", WorkableElectricMultiblockMachine::new)\n");
             out.append(chain).append("        .register();\n");

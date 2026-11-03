@@ -1,16 +1,10 @@
 package net.phoenixvine.blueprint.client.render;
 
-import com.gregtechceu.gtceu.client.mui.schema.MutableSchema;
-
 import net.minecraft.CrashReport;
 import net.minecraft.Util;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.SectionBufferBuilderPack;
-import net.minecraft.client.renderer.ShaderInstance;
-import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.*;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
@@ -19,18 +13,9 @@ import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.client.model.data.ModelData;
-import net.phoenixvine.blueprint.client.render.TintedVertexConsumer;
 
-import brachy.modularui.drawable.schema.ISchema;
-import brachy.modularui.drawable.schema.RenderFilter;
-import brachy.modularui.drawable.schema.RenderLevel;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexBuffer;
 import com.mojang.blaze3d.vertex.VertexSorting;
@@ -38,6 +23,10 @@ import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectArrayMap;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArraySet;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.model.data.ModelData;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -64,14 +53,15 @@ public class GhostRenderer {
                 }
             });
 
-    private @Nullable ISchema schema;
-    private @Nullable RenderLevel renderLevel;
+    private @Nullable GhostBlocks schema;
+    private @Nullable GhostLevel renderLevel;
     private @Nullable BlockPos anchorPos;
     private final AtomicInteger timeout = new AtomicInteger(-1);
     private boolean valid = true;
 
     private @Nullable RenderCompileTask lastRenderCompileTask;
-    private final SectionBufferBuilderPack chunkBufferBuilders = new SectionBufferBuilderPack();
+
+    private final ChunkBufferBuilderPack chunkBufferBuilders = new ChunkBufferBuilderPack();
     private final AtomicReference<CompileStatus> compileStatus = new AtomicReference<>();
     private final AtomicReference<RenderCompileResults> compiledRenderResult = new AtomicReference<>();
     private boolean dirty = true;
@@ -88,11 +78,11 @@ public class GhostRenderer {
         timeout.set(duration);
     }
 
-    public void showPreview(BlockPos anchorPos, MutableSchema schema, boolean valid, int duration) {
+    public void showPreview(BlockPos anchorPos, GhostBlocks schema, boolean valid, int duration) {
         this.anchorPos = anchorPos;
         this.schema = schema;
         this.valid = valid;
-        this.renderLevel = new RenderLevel(schema, RenderFilter.ALL);
+        this.renderLevel = new GhostLevel(schema.map(), anchorPos);
         timeout.set(duration);
         notifyRecompile();
     }
@@ -312,11 +302,11 @@ public class GhostRenderer {
                     GhostRenderer.this.renderLevel == null) {
                 return CompletableFuture.completedFuture(compileResults.withStatus(CompileStatus.CANCELED));
             }
-            RenderLevel fakeLevel = GhostRenderer.this.renderLevel;
+            GhostLevel fakeLevel = GhostRenderer.this.renderLevel;
             boolean tintValid = GhostRenderer.this.valid;
 
             var blockRenderDispatcher = Minecraft.getInstance().getBlockRenderer();
-            SectionBufferBuilderPack chunkBufferBuilders = GhostRenderer.this.chunkBufferBuilders;
+            net.minecraft.client.renderer.ChunkBufferBuilderPack chunkBufferBuilders = GhostRenderer.this.chunkBufferBuilders;
             Map<RenderType, BufferBuilder> builders = new java.util.HashMap<>();
 
             RandomSource randomSource = RandomSource.create();
@@ -328,8 +318,8 @@ public class GhostRenderer {
             float tintB = tintValid ? 0.6f : 0.55f;
 
             ModelBlockRenderer.enableCaching();
-            for (var blockEntry : GhostRenderer.this.schema) {
-                BlockPos pos = blockEntry.getKey();
+            for (long key : GhostRenderer.this.schema.map().keySet()) {
+                BlockPos pos = BlockPos.of(key);
                 BlockState blockState = fakeLevel.getBlockState(pos);
                 if (blockState.isAir()) continue;
 
@@ -354,7 +344,11 @@ public class GhostRenderer {
 
                     for (RenderType renderType : model.getRenderTypes(blockState, randomSource, modelData)) {
                         BufferBuilder builder = builders.computeIfAbsent(renderType,
-                                rt -> new BufferBuilder(chunkBufferBuilders.buffer(rt), rt.mode(), rt.format()));
+                                rt -> {
+                                    BufferBuilder b = chunkBufferBuilders.builder(rt);
+                                    b.begin(rt.mode(), rt.format());
+                                    return b;
+                                });
                         startedBuffers.add(renderType);
 
                         TintedVertexConsumer tinted = new TintedVertexConsumer(builder);
@@ -371,19 +365,21 @@ public class GhostRenderer {
             }
 
             for (RenderType renderType : startedBuffers) {
-                MeshData mesh = builders.get(renderType).build();
-                if (mesh != null) {
+                BufferBuilder builder = builders.get(renderType);
+                if (builder != null) {
                     if (renderType == RenderType.translucent()) {
-                        mesh.sortQuads(chunkBufferBuilders.buffer(renderType), VertexSorting
-                                .byDistance((float) cameraPos.x, (float) cameraPos.y, (float) cameraPos.z));
+                        builder.setQuadSorting(VertexSorting.byDistance((float) cameraPos.x, (float) cameraPos.y, (float) cameraPos.z));
                     }
-                    compileResults.renderedLayers.put(renderType, mesh);
+                    BufferBuilder.RenderedBuffer renderedBuffer = builder.end();
+                    if (renderedBuffer != null) {
+                        compileResults.renderedLayers.put(renderType, renderedBuffer);
+                    }
                 }
             }
             ModelBlockRenderer.clearCache();
 
             if (this.isCanceled.get()) {
-                compileResults.renderedLayers.values().forEach(MeshData::close);
+                compileResults.renderedLayers.values().forEach(BufferBuilder.RenderedBuffer::release);
                 return CompletableFuture.completedFuture(compileResults.withStatus(CompileStatus.CANCELED));
             }
 
@@ -407,7 +403,7 @@ public class GhostRenderer {
         }
 
         protected CompletableFuture<Void> uploadChunkLayer(RenderCompileResults results,
-                                                           MeshData builder,
+                                                           BufferBuilder.RenderedBuffer builder,
                                                            RenderType renderType) {
             return CompletableFuture.runAsync(() -> {
                 VertexBuffer buffer = results.getOrCreateChunkBuffers().get(renderType);
@@ -424,7 +420,8 @@ public class GhostRenderer {
 
         protected CompileStatus status = CompileStatus.COMPILING;
         protected final List<BlockEntity> blockEntities = new ArrayList<>();
-        protected final Map<RenderType, MeshData> renderedLayers = new Reference2ObjectArrayMap<>();
+        // 1.20.1 uses BufferBuilder.RenderedBuffer instead of MeshData
+        protected final Map<RenderType, com.mojang.blaze3d.vertex.BufferBuilder.RenderedBuffer> renderedLayers = new Reference2ObjectArrayMap<>();
         protected final Set<RenderType> hasBlocks = new ObjectArraySet<>(RenderType.chunkBufferLayers().size());
         private @Nullable Map<RenderType, VertexBuffer> chunkBuffers;
 

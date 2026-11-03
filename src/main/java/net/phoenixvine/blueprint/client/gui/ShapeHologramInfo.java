@@ -11,9 +11,17 @@ public final class ShapeHologramInfo {
 
     private ShapeHologramInfo() {}
 
+    /** Short enough for the editor's header, where it sits to the right of the mode tabs. */
     public static String summary() {
         if (tooBig) return "Too big (60,000 max)";
         String text = String.format("%,d blocks", blocks);
-        return haveBlock ? text : text + "  -  no block in hand";
+        return haveBlock ? text : text + ", no block";
+    }
+
+    /** The long form, shown as a tooltip when the header has to shorten the summary. */
+    public static String fullSummary() {
+        if (tooBig) return "Too big (60,000 max)";
+        String text = String.format("%,d blocks", blocks);
+        return haveBlock ? text : text + "  -  no block in your other hand";
     }
 }

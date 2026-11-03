@@ -1,31 +1,34 @@
 package net.phoenixvine.blueprint.common.export;
 
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
-import net.phoenixvine.blueprint.Blueprint;
+import net.minecraftforge.network.NetworkEvent;
 import net.phoenixvine.blueprint.common.BlueprintWandItem;
 
+import java.util.function.Supplier;
+
 /** What the wand's keys (mode, controller, copy) ask the server to do to the wand in the player's hand. */
-public record C2SBlueprintWandActionPacket(int action) implements CustomPacketPayload {
+public record C2SBlueprintWandActionPacket(int action) {
 
-    public static final Type<C2SBlueprintWandActionPacket> TYPE = new Type<>(Blueprint.id("blueprint_wand_action"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, C2SBlueprintWandActionPacket> STREAM_CODEC = StreamCodec
-            .composite(ByteBufCodecs.VAR_INT, C2SBlueprintWandActionPacket::action, C2SBlueprintWandActionPacket::new);
-
-    @Override
-    public Type<? extends CustomPacketPayload> type() {
-        return TYPE;
+    // Encoder (writes data into the buffer)
+    public static void encode(C2SBlueprintWandActionPacket packet, FriendlyByteBuf buf) {
+        buf.writeVarInt(packet.action());
     }
 
-    public static void handle(C2SBlueprintWandActionPacket packet, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (!(ctx.player() instanceof ServerPlayer player)) return;
+    // Decoder (reads data from the buffer)
+    public static C2SBlueprintWandActionPacket decode(FriendlyByteBuf buf) {
+        return new C2SBlueprintWandActionPacket(buf.readVarInt());
+    }
+
+    // Message handler executed on the server thread
+    public static void handle(C2SBlueprintWandActionPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
+        NetworkEvent.Context context = contextSupplier.get();
+        context.enqueueWork(() -> {
+            ServerPlayer player = context.getSender();
+            if (player == null) return;
+
             for (InteractionHand hand : InteractionHand.values()) {
                 ItemStack stack = player.getItemInHand(hand);
                 if (stack.getItem() instanceof BlueprintWandItem) {
@@ -34,5 +37,6 @@ public record C2SBlueprintWandActionPacket(int action) implements CustomPacketPa
                 }
             }
         });
+        context.setPacketHandled(true);
     }
 }

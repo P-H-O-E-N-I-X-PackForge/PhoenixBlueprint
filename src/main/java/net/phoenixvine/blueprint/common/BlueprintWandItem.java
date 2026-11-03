@@ -15,6 +15,7 @@ import net.minecraft.world.level.Level;
 import net.phoenixvine.blueprint.client.ClientHooks;
 import net.phoenixvine.blueprint.common.export.ShapeExportActions;
 import net.phoenixvine.blueprint.common.export.WandSelection;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -72,7 +73,7 @@ public class BlueprintWandItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
+    public void appendHoverText(ItemStack stack, @Nullable net.minecraft.world.level.Level level, List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(Component.literal("Builds rings, spheres, helices, knots and more").withStyle(ChatFormatting.AQUA));
         tooltip.add(Component.literal("Block to build with: the other hand").withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("Right-click: build  |  Left-click: undo").withStyle(ChatFormatting.DARK_GRAY));

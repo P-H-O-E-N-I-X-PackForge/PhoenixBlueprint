@@ -184,7 +184,7 @@ class KubeJsExportTest {
         assertTrue(pattern.contains("Predicates.autoAbilities(definition.getRecipeTypes())"), pattern);
 
         String text = KubeJsExport.machine(List.of(pattern), java, ctx);
-        assertTrue(text.startsWith("public static final MachineEntry<MultiblockMachineDefinition> DIMENSIONAL_ANCHOR = " +
+        assertTrue(text.startsWith("public static final MultiblockMachineDefinition DIMENSIONAL_ANCHOR = " +
                 "REGISTRATE\n        .multiblock(\"dimensional_anchor\", WorkableElectricMultiblockMachine::new)\n" +
                 "        .langValue(\"Dimensional Anchor\")\n" +
                 "        .rotationState(RotationState.ALL)\n" +

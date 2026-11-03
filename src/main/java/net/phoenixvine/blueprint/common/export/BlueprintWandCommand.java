@@ -6,16 +6,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
+
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.phoenixvine.blueprint.common.ShapeActions;
 import net.phoenixvine.blueprint.common.BlueprintWandItem;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 
 /** {@code /blueprint name <name>}: names the structure being edited (a GTM 8 machine's substructure) in the held wand. */
-@EventBusSubscriber
+@Mod.EventBusSubscriber
 public final class BlueprintWandCommand {
 
     private BlueprintWandCommand() {}

@@ -1,6 +1,7 @@
 package net.phoenixvine.blueprint.client.gui;
 
 import net.minecraft.client.Minecraft;
+import net.minecraftforge.fml.ModList;
 
 /**
  * Shrinking a screen to fit by a fraction of the GUI scale (0.77 of a 3x scale is 2.3 real pixels per GUI pixel) blurs text
@@ -17,7 +18,7 @@ public final class PixelScale {
 
     /** Space to leave along the bottom of the window, in GUI units: EMI draws its search bar there. */
     public static float bottomReserve() {
-        return net.neoforged.fml.ModList.get().isLoaded("emi") ? 24f : 0f;
+        return ModList.get().isLoaded("emi") ? 24f : 0f;
     }
 
     /** The scale to use for a screen that fits at {@code fit} (at most 1). */

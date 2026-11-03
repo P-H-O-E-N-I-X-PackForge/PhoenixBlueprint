@@ -78,8 +78,6 @@ public final class RegistryPickerScreen extends Screen {
         setInitialFocus(search);
     }
 
-    @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {}
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float partial) {
@@ -118,8 +116,8 @@ public final class RegistryPickerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
-        scroll = Math.max(0, Math.min(Math.max(0, shown.size() - visibleRows()), scroll - (int) Math.signum(scrollY) * 3));
+    public boolean mouseScrolled(double mx, double my, double delta) {
+        scroll = Math.max(0, Math.min(Math.max(0, shown.size() - visibleRows()), scroll - (int) Math.signum(delta) * 3));
         return true;
     }
 

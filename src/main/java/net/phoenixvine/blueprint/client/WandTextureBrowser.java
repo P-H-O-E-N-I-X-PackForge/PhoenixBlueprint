@@ -84,8 +84,6 @@ final class WandTextureBrowser extends Screen {
         return Math.max(0, rows * cellHeight() + 8 - (height - FOOTER - HEADER));
     }
 
-    @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {}
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float partial) {
@@ -155,8 +153,8 @@ final class WandTextureBrowser extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
-        scroll = Math.max(0, Math.min(maxScroll(), scroll - (int) (scrollY * (THUMB + PAD))));
+    public boolean mouseScrolled(double mx, double my, double delta) {
+        scroll = Math.max(0, Math.min(maxScroll(), scroll - (int) (delta * (THUMB + PAD))));
         return true;
     }
 

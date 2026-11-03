@@ -5,10 +5,11 @@ import com.gregtechceu.gtceu.api.recipe.modifier.RecipeModifier;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforgespi.language.IModFileInfo;
-import net.neoforged.neoforgespi.language.ModFileScanData;
 
+
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.forgespi.language.IModFileInfo;
+import net.minecraftforge.forgespi.language.ModFileScanData;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Field;
@@ -95,7 +96,7 @@ public final class MachineRefs {
                             }
                             modifiers.putIfAbsent(id, ref);
                         } else if (wantsTypes && value instanceof GTRecipeType type) {
-                            types.putIfAbsent(type.getId().toString(), ref);
+                            types.putIfAbsent(type.registryName.toString(), ref);
                         }
                     }
                 } catch (Throwable ignored) {

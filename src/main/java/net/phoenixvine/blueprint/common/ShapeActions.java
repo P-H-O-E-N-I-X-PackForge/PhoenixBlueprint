@@ -11,11 +11,10 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.common.util.BlockSnapshot;
-import net.neoforged.neoforge.event.level.BlockEvent;
 
 import it.unimi.dsi.fastutil.longs.LongIterator;
+import net.minecraftforge.common.util.BlockSnapshot;
+import net.minecraftforge.event.level.BlockEvent;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -141,18 +140,22 @@ public final class ShapeActions {
         boolean free = existing.isAir() || existing.canBeReplaced();
         if ((!free && !overwrite) || level.getBlockEntity(pos) != null || existing == state) return Outcome.SKIPPED;
 
-        if (!free && NeoForge.EVENT_BUS.post(new BlockEvent.BreakEvent(level, pos, existing, player)).isCanceled()) {
+        var breakEvent = new net.minecraftforge.event.level.BlockEvent.BreakEvent(level, pos, existing, player);
+        if (!free && net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(breakEvent)) {
             return Outcome.DENIED;
         }
+
         // placement events describe the block that was there, so the snapshot is taken before the block is set; if a
         // listener refuses, the old block goes back (the way a refused placement is undone for a player)
-        BlockSnapshot snapshot = BlockSnapshot.create(level.dimension(), level, pos);
+        net.minecraftforge.common.util.BlockSnapshot snapshot = net.minecraftforge.common.util.BlockSnapshot.create(level.dimension(), level, pos);
         level.setBlock(pos, state, 2);
-        if (NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(snapshot, level.getBlockState(pos.below()), player))
-                .isCanceled()) {
+
+        var placeEvent = new net.minecraftforge.event.level.BlockEvent.EntityPlaceEvent(snapshot, level.getBlockState(pos.below()), player);
+        if (net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(placeEvent)) {
             level.setBlock(pos, existing, 2);
             return Outcome.DENIED;
         }
+
         before.put(pos.asLong(), existing);
         return Outcome.PLACED;
     }

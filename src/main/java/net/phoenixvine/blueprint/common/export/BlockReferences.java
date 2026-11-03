@@ -3,9 +3,10 @@ package net.phoenixvine.blueprint.common.export;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforgespi.language.ModFileScanData;
 
+
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.forgespi.language.ModFileScanData;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Field;

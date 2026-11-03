@@ -6,7 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.TagParser;
-import net.neoforged.fml.loading.FMLPaths;
+import net.minecraftforge.fml.loading.FMLPaths;
 import net.phoenixvine.blueprint.common.ShapePlan;
 import net.phoenixvine.blueprint.common.ShapeSpec;
 
@@ -131,14 +131,16 @@ public final class PlanLibrary {
         return SHARE_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray());
     }
 
-    /** Reads a shared line (or a plan written out as text); throws when it is neither. */
     public static ShapePlan fromShareString(String text) throws IOException, CommandSyntaxException {
         String trimmed = text.trim();
         if (trimmed.startsWith("{")) return ShapePlan.load(TagParser.parseTag(trimmed));
         if (!trimmed.startsWith(SHARE_PREFIX)) throw new IOException("not a blueprint plan");
         byte[] bytes = Base64.getUrlDecoder().decode(trimmed.substring(SHARE_PREFIX.length())
                 .getBytes(StandardCharsets.US_ASCII));
-        CompoundTag tag = NbtIo.readCompressed(new ByteArrayInputStream(bytes), NbtAccounter.create(MAX_NBT_BYTES));
+
+        // In 1.20.1, NbtIo.readCompressed takes only the InputStream
+        CompoundTag tag = NbtIo.readCompressed(new ByteArrayInputStream(bytes));
+
         return ShapePlan.load(tag);
     }
 }

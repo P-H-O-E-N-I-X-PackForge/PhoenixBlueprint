@@ -3,7 +3,6 @@ package net.phoenixvine.blueprint.client.gui.hud;
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 
-import brachy.modularui.api.drawable.IDrawable;
 
 public record HudTheme(int bgTop, int bgBottom, int accent, int accent2, Pattern pattern, TabStyle tabs) {
 
@@ -60,16 +59,6 @@ public record HudTheme(int bgTop, int bgBottom, int accent, int accent2, Pattern
 
     public int dim() {
         return GuiDraw.mix(accent2, 0xFF_000000, 0.55f);
-    }
-
-    public IDrawable background() {
-        return (ctx, x, y, w, h, theme) -> {
-            GuiGraphics g = ctx.getGraphics();
-            GuiDraw.drawGradientRect(g, x, y, w, h, bgTop, bgBottom);
-            pattern(g, x, y, w, h);
-            GuiDraw.drawBorder(g, x, y, w, h, accent2, 1);
-            GuiDraw.drawBorder(g, x + 2, y + 2, w - 4, h - 4, GuiDraw.withAlpha(accent, 0x22), 1);
-        };
     }
 
     public void pattern(GuiGraphics g, int x, int y, int w, int h) {

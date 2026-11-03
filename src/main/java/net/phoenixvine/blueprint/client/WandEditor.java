@@ -7,7 +7,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.phoenixvine.blueprint.common.C2SWandEditPacket;
 import net.phoenixvine.blueprint.common.C2SWandPlanPacket;
 import net.phoenixvine.blueprint.common.ShapePlan;
@@ -33,7 +32,9 @@ public final class WandEditor {
         if (player == null) return;
         ItemStack stack = ShapeExportClient.wand(player);
         if (stack != null) WandEdits.apply(null, stack, op, new FriendlyByteBuf(Unpooled.wrappedBuffer(data)));
-        PacketDistributor.sendToServer(new C2SWandEditPacket(op, data));
+
+        // Send packet using your 1.20.1 SimpleChannel network channel
+        net.phoenixvine.blueprint.network.BlueprintNetwork.CHANNEL.sendToServer(new C2SWandEditPacket(op, data));
     }
 
     public static void send(int op) {
@@ -86,9 +87,10 @@ public final class WandEditor {
         net.minecraft.nbt.CompoundTag tag = plan.save();
         ItemStack stack = ShapeExportClient.wand(player);
         if (stack != null) C2SWandPlanPacket.apply(stack, tag);
-        PacketDistributor.sendToServer(new C2SWandPlanPacket(tag));
-    }
 
+        // Send packet using your 1.20.1 SimpleChannel network channel
+        net.phoenixvine.blueprint.network.BlueprintNetwork.CHANNEL.sendToServer(new C2SWandPlanPacket(tag));
+    }
     public static void select(int direction) {
         send(WandEdits.SELECT, buf -> buf.writeVarInt(direction));
     }
