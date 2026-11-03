@@ -28,7 +28,7 @@ import java.util.List;
 public class BlueprintWandItem extends Item {
 
     /** Blocks added to the player's reach while the wand is in a hand, so a shape can be placed from a distance. */
-    public static final double EXTRA_REACH = 120.0;
+    public static final double EXTRA_REACH = 64.0;
 
     public BlueprintWandItem(Properties properties) {
         super(properties);
